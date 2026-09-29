@@ -1,11 +1,28 @@
 import { LEGAL, LEGAL_UPDATED, type LegalPageId } from '@ziklub/i18n';
-import { useEffect } from 'react';
+import { useEffect, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router';
 import { IconBack } from '../components/Icons';
 import { LangToggle } from '../components/LangToggle';
 import { LogoMark } from '../components/Logo';
 import { SiteFooter } from '../components/SiteFooter';
+
+const CONTACT = /(contact(?:e|er)? Jerttech)/gi;
+
+/** Turns every "contact Jerttech" in the text into a link to the contact page. */
+function withContactLinks(text: string, topic?: string): ReactNode {
+  const parts = text.split(CONTACT);
+  if (parts.length === 1) return text;
+  return parts.map((part, i) =>
+    i % 2 === 1 ? (
+      <Link key={i} to={topic ? `/contact?topic=${topic}` : '/contact'}>
+        {part}
+      </Link>
+    ) : (
+      part
+    ),
+  );
+}
 
 /** About, Privacy and Terms, rendered from the shared content in @ziklub/i18n. */
 export function LegalPage({ page }: { page: LegalPageId }) {
@@ -41,12 +58,12 @@ export function LegalPage({ page }: { page: LegalPageId }) {
           <section key={s.heading}>
             <h2>{s.heading}</h2>
             {s.paragraphs?.map((p) => (
-              <p key={p}>{p}</p>
+              <p key={p}>{withContactLinks(p, page === 'privacy' ? 'privacy' : undefined)}</p>
             ))}
             {s.bullets && (
               <ul>
                 {s.bullets.map((b) => (
-                  <li key={b}>{b}</li>
+                  <li key={b}>{withContactLinks(b, /copyright|rights holder|droits|ayant droit/i.test(b) ? 'copyright' : undefined)}</li>
                 ))}
               </ul>
             )}

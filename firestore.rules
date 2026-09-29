@@ -1,0 +1,29 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Contact page messages. Anyone signed in (anonymous is fine) can send one; nobody can read,
+    // change or delete them from the app. The team reads them in the Firebase console.
+    match /feedback/{id} {
+      allow create: if request.auth != null
+        && request.resource.data.keys().hasOnly(['topic', 'message', 'name', 'email', 'lang', 'platform', 'uid', 'status', 'createdAt'])
+        && request.resource.data.keys().hasAll(['topic', 'message', 'lang', 'platform', 'uid', 'status', 'createdAt'])
+        && request.resource.data.topic in ['feedback', 'question', 'problem', 'copyright', 'privacy']
+        && request.resource.data.message is string
+        && request.resource.data.message.size() > 0
+        && request.resource.data.message.size() <= 2000
+        && (!('name' in request.resource.data) || (request.resource.data.name is string && request.resource.data.name.size() <= 60))
+        && (!('email' in request.resource.data) || (request.resource.data.email is string && request.resource.data.email.size() <= 120
+            && request.resource.data.email.matches('^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$')))
+        && request.resource.data.lang is string && request.resource.data.lang.size() <= 5
+        && request.resource.data.platform is string && request.resource.data.platform.size() <= 20
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.status == 'new'
+        && request.resource.data.createdAt == request.time;
+    }
+
+    // Everything else is closed.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

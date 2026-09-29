@@ -10,6 +10,7 @@ export function SiteFooter() {
         <Link to="/about">{t('footer.about')}</Link>
         <Link to="/privacy">{t('footer.privacy')}</Link>
         <Link to="/terms">{t('footer.terms')}</Link>
+        <Link to="/contact">{t('footer.contact')}</Link>
       </nav>
       <p className="powered">
         {t('footer.poweredBy')} <b>Jerttech</b>

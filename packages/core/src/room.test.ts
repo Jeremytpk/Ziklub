@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { EFFECTS, renderEffect } from './effects';
+import { checkFeedback } from './feedback';
 import { auxSuccessor, moveInQueue, sortQueue, expectedPosition, generateRoomCode, isValidRoomCode, nextTrack, normalizeRoomCode, previousTrack } from './room';
 import { PlaybackSync, type AudioEngine } from './sync';
 import type { Track } from './types';
@@ -160,5 +161,20 @@ describe('DJ effects', () => {
     }
     expect(peak).toBeGreaterThan(0.3); // audible
     expect(peak).toBeLessThanOrEqual(1); // no clipping
+  });
+});
+
+describe('contact form checks', () => {
+  it('accepts a message with optional name and email', () => {
+    expect(checkFeedback({ topic: 'feedback', message: '  Super app  ', name: ' Léa ', email: '' })).toEqual({
+      value: { topic: 'feedback', message: 'Super app', name: 'Léa', email: undefined },
+      error: null,
+    });
+  });
+  it('rejects empty, too long, bad email and unknown subject', () => {
+    expect(checkFeedback({ topic: 'feedback', message: '   ' }).error).toBe('message-missing');
+    expect(checkFeedback({ topic: 'feedback', message: 'x'.repeat(2001) }).error).toBe('message-too-long');
+    expect(checkFeedback({ topic: 'question', message: 'hi', email: 'nope@' }).error).toBe('email-invalid');
+    expect(checkFeedback({ topic: 'spam' as never, message: 'hi' }).error).toBe('topic-invalid');
   });
 });

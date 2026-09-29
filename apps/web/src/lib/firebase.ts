@@ -6,7 +6,7 @@ import { connectStorageEmulator, getStorage } from 'firebase/storage';
 import { useEffect, useState } from 'react';
 
 const env = import.meta.env;
-const useEmulators = env.VITE_USE_EMULATORS === 'true';
+export const useEmulators = env.VITE_USE_EMULATORS === 'true';
 
 const config = useEmulators
   ? {
@@ -28,7 +28,7 @@ const config = useEmulators
       appId: '1:605612326836:web:1f768e4b79364211affce1',
     };
 
-const app = initializeApp(config);
+export const app = initializeApp(config);
 export const auth = getAuth(app);
 const db = getDatabase(app);
 const storage = getStorage(app);

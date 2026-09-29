@@ -56,6 +56,7 @@ const en: Record<LegalPageId, LegalPage> = {
           'What you do in a room: your messages, reactions, song suggestions and, if you are the DJ, the songs you upload, the queue, playback and effects.',
           'The audio files you upload, with their title and length.',
           'Technical data needed to deliver the service, such as your IP address, which our hosting providers process when your device connects. We do not store it ourselves.',
+          'If you write to us through the contact page: your message, the subject you chose and, if you give them, your name and email address.',
         ],
       },
       {
@@ -63,6 +64,7 @@ const en: Record<LegalPageId, LegalPage> = {
         paragraphs: [
           'Everything in a room is erased, songs included: when the DJ or the room creator closes the room, when nobody has been in the room for 15 minutes, or 3 hours after the room was created at the latest. We keep no backup of rooms.',
           'The anonymous ID stays in our sign-in system and on your device, so you keep the same ID when you come back. Once a room is erased, it is no longer linked to anything you did.',
+          'Messages sent through the contact page are kept only as long as we need them to answer you and follow up, and are then deleted.',
         ],
       },
       {
@@ -82,7 +84,7 @@ const en: Record<LegalPageId, LegalPage> = {
       {
         heading: 'Service providers',
         paragraphs: [
-          'Ziklub runs on Google Firebase (sign-in, real-time database, file storage and automatic clean-up), with servers in the United States, and the website is hosted by Netlify. Fonts are loaded from Google Fonts. These providers process data only to run the service.',
+          'Ziklub runs on Google Firebase (sign-in, databases, file storage and automatic clean-up), with servers in the United States, and the website is hosted by Netlify. Fonts are loaded from Google Fonts. These providers process data only to run the service.',
           'We do not sell your data, we show no advertising and we do not use analytics or tracking tools.',
         ],
       },
@@ -201,6 +203,7 @@ const fr: Record<LegalPageId, LegalPage> = {
           'Ce que tu fais dans une room : tes messages, réactions, propositions de sons et, si tu es DJ, les sons que tu envoies, la file d’attente, la lecture et les effets.',
           'Les fichiers audio que tu envoies, avec leur titre et leur durée.',
           'Les données techniques nécessaires au service, comme ton adresse IP, traitée par nos hébergeurs quand ton appareil se connecte. Nous ne la conservons pas nous-mêmes.',
+          'Si tu nous écris via la page de contact : ton message, le sujet choisi et, si tu les donnes, ton nom et ton adresse e-mail.',
         ],
       },
       {
@@ -208,6 +211,7 @@ const fr: Record<LegalPageId, LegalPage> = {
         paragraphs: [
           'Tout le contenu d’une room est effacé, sons compris : quand le DJ ou le créateur ferme la room, quand personne n’y est depuis 15 minutes, ou au plus tard 3 heures après sa création. Nous ne gardons aucune sauvegarde des rooms.',
           'L’identifiant anonyme reste dans notre système de connexion et sur ton appareil, pour que tu gardes le même identifiant quand tu reviens. Une fois la room effacée, il n’est plus lié à rien de ce que tu y as fait.',
+          'Les messages envoyés via la page de contact sont gardés seulement le temps de te répondre et d’assurer le suivi, puis supprimés.',
         ],
       },
       {
@@ -227,7 +231,7 @@ const fr: Record<LegalPageId, LegalPage> = {
       {
         heading: 'Prestataires',
         paragraphs: [
-          'Ziklub fonctionne avec Google Firebase (connexion, base de données en temps réel, stockage de fichiers et nettoyage automatique), avec des serveurs aux États-Unis, et le site est hébergé par Netlify. Les polices sont chargées depuis Google Fonts. Ces prestataires traitent les données uniquement pour faire fonctionner le service.',
+          'Ziklub fonctionne avec Google Firebase (connexion, bases de données, stockage de fichiers et nettoyage automatique), avec des serveurs aux États-Unis, et le site est hébergé par Netlify. Les polices sont chargées depuis Google Fonts. Ces prestataires traitent les données uniquement pour faire fonctionner le service.',
           'Nous ne vendons pas tes données, nous n’affichons pas de publicité et nous n’utilisons aucun outil de mesure d’audience ou de pistage.',
         ],
       },
