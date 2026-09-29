@@ -1,2 +1,6 @@
 node_modules/
 lib/
+# Private settings (e.g. NOTIFY_EMAIL): never committed, the repository is public.
+.env*
+.secret.local
+!.env.example

@@ -58,4 +58,11 @@ Firebase web config is public by design; access is controlled by the security ru
 3. **Netlify**: import this GitHub repository. `netlify.toml` already sets the build command and output folder; no environment variables are needed.
 4. In Firebase Authentication → Settings → Authorized domains, add the Netlify domain.
 
+5. **Contact messages by email**: messages from `/contact` are stored in Firestore (`feedback`) and emailed
+   by the `emailNewFeedback` function through [Resend](https://resend.com).
+   - Put the destination address in `functions/.env.ziklub` as `NOTIFY_EMAIL=...` (this file is not committed:
+     the repository is public). See `functions/.env.example`.
+   - Store the Resend API key as a secret: `firebase functions:secrets:set RESEND_API_KEY --project ziklub`
+   - Deploy: `firebase deploy --only functions --project ziklub`
+
 To run the local site against the real project instead of the emulators, create `apps/web/.env.development.local` containing `VITE_USE_EMULATORS=false`.
