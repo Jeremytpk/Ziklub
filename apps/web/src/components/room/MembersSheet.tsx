@@ -12,11 +12,13 @@ interface Props {
   isDj: boolean;
   onPassAux: (m: Member) => void;
   onEditLook: () => void;
+  /** When the room ends on its own (ms). */
+  endsAt?: number;
   onClose: () => void;
 }
 
-export function MembersSheet({ members, djUid, uid, isDj, onPassAux, onEditLook, onClose }: Props) {
-  const { t } = useTranslation();
+export function MembersSheet({ members, djUid, uid, isDj, onPassAux, onEditLook, onClose, endsAt }: Props) {
+  const { t, i18n } = useTranslation();
   const [hearFx, setHearFx] = useState(() => !isFxMuted());
   const sorted = [...members].sort((a, b) => (a.uid === djUid ? -1 : b.uid === djUid ? 1 : a.joinedAt - b.joinedAt));
   return (
@@ -50,6 +52,9 @@ export function MembersSheet({ members, djUid, uid, isDj, onPassAux, onEditLook,
           }}
         />
       </label>
+      {endsAt && (
+        <p className="hint">{t('room.endsAt', { time: new Date(endsAt).toLocaleTimeString(i18n.language, { hour: 'numeric', minute: '2-digit' }) })}</p>
+      )}
       <button type="button" className="btn btn-ghost" onClick={onEditLook}>
         {t('room.editLook')}
       </button>

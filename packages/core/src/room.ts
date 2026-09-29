@@ -1,4 +1,24 @@
-import type { Member, Playback, Track } from './types';
+import type { Member, Playback, RoomMeta, Track } from './types';
+
+/** Every room is erased 3 hours after it was created. */
+export const ROOM_MAX_AGE_MS = 3 * 60 * 60 * 1000;
+/** A room nobody is in is erased after 15 minutes, even if music was playing. */
+export const EMPTY_ROOM_TIMEOUT_MS = 15 * 60 * 1000;
+/** Warn everyone this long before a room reaches its 3-hour limit. */
+export const ROOM_END_WARNING_MS = 5 * 60 * 1000;
+
+export type RoomStatus = 'open' | 'closed' | 'expired' | 'gone';
+
+/** Whether a room can still be used. `gone` = erased (or never existed). */
+export function roomStatus(meta: RoomMeta | null | undefined, serverNow: number): RoomStatus {
+  if (!meta) return 'gone';
+  if (meta.closedBy) return 'closed';
+  if (serverNow >= meta.createdAt + ROOM_MAX_AGE_MS) return 'expired';
+  return 'open';
+}
+
+/** When the room will end on its own (ms, server time). */
+export const roomEndsAt = (meta: RoomMeta) => meta.createdAt + ROOM_MAX_AGE_MS;
 
 // No 0/O, 1/I/L: codes are read aloud and typed on phones.
 const ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
@@ -66,8 +86,21 @@ export function previousTrack(queue: Track[], currentId: string | null): Track |
  * Returns the uid that should claim it, or null if nothing needs to change.
  */
 export function auxSuccessor(djUid: string | undefined, members: Member[]): string | null {
+  return successorOf(djUid, members, true);
+}
+
+/**
+ * Who should get the aux when `leaverUid` leaves: the member who has been in the room the longest, apart from them.
+ * Returns null if nobody else is here.
+ */
+export function nextDj(leaverUid: string, members: Member[]): string | null {
+  const others = members.filter((m) => m.uid !== leaverUid);
+  return others.length ? successorOf(undefined, others, false) : null;
+}
+
+function successorOf(djUid: string | undefined, members: Member[], keepIfPresent: boolean): string | null {
   if (!members.length) return null;
-  if (djUid && members.some((m) => m.uid === djUid)) return null;
+  if (keepIfPresent && djUid && members.some((m) => m.uid === djUid)) return null;
   const sorted = [...members].sort((a, b) => a.joinedAt - b.joinedAt || a.uid.localeCompare(b.uid));
   return sorted[0].uid;
 }

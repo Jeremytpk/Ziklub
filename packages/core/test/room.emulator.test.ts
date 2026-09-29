@@ -3,7 +3,7 @@
 import { deleteApp, initializeApp, type FirebaseApp } from 'firebase/app';
 import { connectAuthEmulator, getAuth, signInAnonymously } from 'firebase/auth';
 import { connectDatabaseEmulator, get, getDatabase, goOffline, ref, set } from 'firebase/database';
-import { connectStorageEmulator, getStorage } from 'firebase/storage';
+import { connectStorageEmulator, getStorage, listAll, ref as sref } from 'firebase/storage';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createZiklubApi, type RoomState, type SongRequest, type ZiklubApi } from '../src';
 
@@ -20,6 +20,7 @@ interface Client {
   uid: string;
   api: ZiklubApi;
   db: ReturnType<typeof getDatabase>;
+  storage: ReturnType<typeof getStorage>;
 }
 
 async function client(name: string): Promise<Client> {
@@ -31,7 +32,7 @@ async function client(name: string): Promise<Client> {
   const storage = getStorage(app);
   connectStorageEmulator(storage, '127.0.0.1', 9199);
   const cred = await signInAnonymously(auth);
-  return { app, uid: cred.user.uid, api: createZiklubApi(db, storage), db };
+  return { app, uid: cred.user.uid, api: createZiklubApi(db, storage), db, storage };
 }
 
 function nextState(c: Client, code: string, until: (s: RoomState) => boolean): Promise<RoomState> {
@@ -210,5 +211,51 @@ describe('a room with two friends', () => {
     expect(ok).toBe(true);
     const s = await nextState(B, code, (x) => x.meta?.djUid === B.uid);
     expect(s.meta?.djUid).toBe(B.uid);
+  });
+});
+
+describe('closing a room', () => {
+  let room: string;
+  const song = () => new Blob([new Uint8Array(256)], { type: 'audio/mpeg' });
+
+  it('a listener cannot close or erase the room', async () => {
+    room = await A.api.createRoom(A.uid);
+    await A.api.joinRoom(room, A.uid, { name: 'Maya', look: { body: 'mint' } });
+    await B.api.joinRoom(room, B.uid, { name: 'Karim', look: { body: 'peach' } });
+    await A.api.addTrack(room, A.uid, song(), { title: 'Un', duration: 60, contentType: 'audio/mpeg', addedByName: 'Maya', asRequest: false });
+    await expect(set(ref(B.db, `rooms/${room}/meta/closedBy`), 'Karim')).rejects.toThrow(/permission/i);
+    await expect(set(ref(B.db, `rooms/${room}`), null)).rejects.toThrow(/permission/i);
+  });
+
+  it('the creator can still close it after passing the aux, and everyone is told', async () => {
+    await A.api.passAux(room, B.uid);
+    const told = new Promise<string | undefined>((resolve) => {
+      const off = B.api.subscribeRoom(room, (s) => {
+        if (s.meta?.closedBy) {
+          setTimeout(off, 0);
+          resolve(s.meta.closedBy);
+        }
+      });
+    });
+    const closing = A.api.closeRoom(room, 'Maya');
+    expect(await told).toBe('Maya');
+    await closing;
+    expect((await get(ref(B.db, `rooms/${room}/meta`))).exists()).toBe(false);
+    expect((await listAll(sref(A.storage, `rooms/${room}`))).items).toHaveLength(0);
+    expect(await B.api.roomExists(room)).toBe(false);
+  });
+
+  it('nobody can join a closed room', async () => {
+    const r2 = await A.api.createRoom(A.uid);
+    await A.api.joinRoom(r2, A.uid, { name: 'Maya', look: { body: 'mint' } });
+    await set(ref(A.db, `rooms/${r2}/meta/closedBy`), 'Maya');
+    await expect(B.api.joinRoom(r2, B.uid, { name: 'Karim', look: { body: 'peach' } })).rejects.toThrow(/permission/i);
+    await A.api.eraseRoom(r2);
+  });
+
+  it('a room cannot be created with a fake creation time', async () => {
+    await expect(
+      set(ref(A.db, 'rooms/FAKE1/meta'), { createdAt: Date.now() + 3 * 3600_000, createdBy: A.uid, djUid: A.uid }),
+    ).rejects.toThrow(/permission/i);
   });
 });

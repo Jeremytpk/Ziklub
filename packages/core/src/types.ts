@@ -5,6 +5,10 @@ export interface RoomMeta {
   createdBy: string;
   /** Who holds the aux (controls playlist and playback). */
   djUid: string;
+  /** Set when the DJ or creator closes the room for everyone (their name). The room is then erased. */
+  closedBy?: string;
+  /** Set by the server clean-up while nobody is in the room. */
+  emptySince?: number;
 }
 
 export interface Member {

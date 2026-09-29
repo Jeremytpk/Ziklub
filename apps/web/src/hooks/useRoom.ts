@@ -1,6 +1,11 @@
 import {
   auxSuccessor,
   expectedPosition,
+  nextDj,
+  ROOM_END_WARNING_MS,
+  roomEndsAt,
+  roomStatus,
+  type Member,
   nextTrack,
   PlaybackSync,
   previousTrack,
@@ -18,6 +23,9 @@ import type { Profile } from '../lib/profile';
 const LEAD_KEY = 'ziklub.seekLead';
 const EMPTY: RoomState = { meta: null, members: [], queue: [], playback: null };
 
+/** Why the room is over: closed by someone, reached 3 hours, or erased. */
+export type RoomEnd = { reason: 'closed'; by: string; byMe: boolean } | { reason: 'expired' } | { reason: 'gone' };
+
 /** Joins the room and exposes its live state, the synced player and the DJ actions. */
 export function useRoom(code: string, uid: string, profile: Profile) {
   const [state, setState] = useState<RoomState>(EMPTY);
@@ -26,6 +34,9 @@ export function useRoom(code: string, uid: string, profile: Profile) {
   /** DJ: every pending suggestion. Others: their own pending suggestions. */
   const [requests, setRequests] = useState<SongRequest[]>([]);
   const [soundBlocked, setSoundBlocked] = useState(false);
+  const [ended, setEnded] = useState<RoomEnd | null>(null);
+  const [endingSoon, setEndingSoon] = useState(false);
+  const closingByMe = useRef(false);
   const stateRef = useRef(state);
   stateRef.current = state;
 
@@ -108,8 +119,30 @@ export function useRoom(code: string, uid: string, profile: Profile) {
   }, [sync]);
 
   useEffect(() => {
-    sync.apply(state.playback, currentTrack);
-  }, [sync, state.playback, currentTrack]);
+    if (ended) sync.apply(null, null);
+    else sync.apply(state.playback, currentTrack);
+  }, [sync, state.playback, currentTrack, ended]);
+
+  // ----- Is the room over? (closed by the DJ/creator, 3 hours reached, or erased) -----
+  const endedRef = useRef(ended);
+  endedRef.current = ended;
+  const check = useCallback(() => {
+    if (!ready || endedRef.current) return;
+    const meta = stateRef.current.meta;
+    const status = roomStatus(meta, serverNow());
+    if (status === 'closed') setEnded({ reason: 'closed', by: meta!.closedBy!, byMe: closingByMe.current });
+    else if (status === 'expired') {
+      setEnded({ reason: 'expired' });
+      // The DJ's phone erases it right away; the server clean-up does it otherwise.
+      if (isDjRef.current) quiet(api.eraseRoom(code));
+    } else if (status === 'gone') setEnded({ reason: 'gone' });
+    else setEndingSoon(roomEndsAt(meta!) - serverNow() <= ROOM_END_WARNING_MS);
+  }, [ready, code]);
+  useEffect(() => {
+    check();
+    const id = setInterval(check, 5000);
+    return () => clearInterval(id);
+  }, [check, state.meta]);
 
   const setPlayback = useCallback(
     (trackId: string | null, playing: boolean, position: number) => {
@@ -163,7 +196,7 @@ export function useRoom(code: string, uid: string, profile: Profile) {
   // ----- If the DJ left, the longest-present member takes the aux -----
   useEffect(() => {
     const dj = state.meta?.djUid;
-    if (!state.meta || auxSuccessor(dj, state.members) !== uid) return;
+    if (!state.meta || state.meta.closedBy || auxSuccessor(dj, state.members) !== uid) return;
     api.claimAux(code, uid, dj).then((ok) => {
       if (ok) quiet(api.sendSystem(code, uid, 'claim', { name: profileRef.current.name }));
     });
@@ -211,6 +244,18 @@ export function useRoom(code: string, uid: string, profile: Profile) {
       async decline(r: SongRequest) {
         await api.removeRequest(code, r);
       },
+      /** Hands the aux to someone before leaving: `to`, or whoever has been here the longest. */
+      async handOff(to?: Member) {
+        const target = to ?? stateRef.current.members.find((m) => m.uid === nextDj(uid, stateRef.current.members));
+        if (!target) return;
+        await api.passAux(code, target.uid);
+        quiet(api.sendSystem(code, uid, 'aux', { from: profileRef.current.name, to: target.name }));
+      },
+      /** Closes the room for everyone and erases it. */
+      async closeRoom() {
+        closingByMe.current = true;
+        await api.closeRoom(code, profileRef.current.name);
+      },
       /** Start playing a freshly uploaded song if nothing is playing yet. */
       startIfIdle(t: Track) {
         const pb = stateRef.current.playback;
@@ -226,5 +271,6 @@ export function useRoom(code: string, uid: string, profile: Profile) {
     sync.resume();
   }, [sync]);
 
-  return { state, ready, messages, requests, isDj, currentTrack, dj, soundBlocked, resumeSound };
+  const isCreator = state.meta?.createdBy === uid;
+  return { state, ready, messages, requests, isDj, isCreator, currentTrack, dj, soundBlocked, resumeSound, ended, endingSoon };
 }

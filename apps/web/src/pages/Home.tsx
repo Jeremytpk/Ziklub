@@ -1,11 +1,12 @@
 import { isValidRoomCode, normalizeRoomCode, ROOM_CODE_LENGTH } from '@ziklub/core';
 import { MOODS } from '@ziklub/zu';
-import { useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useNavigate } from 'react-router';
+import { useNavigate, useSearchParams } from 'react-router';
 import { LangToggle } from '../components/LangToggle';
 import { LogoMark } from '../components/Logo';
 import { MoodBlob } from '../components/MoodBlob';
+import { SiteFooter } from '../components/SiteFooter';
 import { api, useAuthUser } from '../lib/firebase';
 
 export function Home() {
@@ -28,6 +29,16 @@ export function Home() {
       setBusy(null);
     }
   };
+
+  // "Create a new room" from the room-ended screen lands here with ?create=1.
+  const [params, setParams] = useSearchParams();
+  const autoCreate = useRef(params.get('create') === '1');
+  useEffect(() => {
+    if (!autoCreate.current || !user) return;
+    autoCreate.current = false;
+    setParams({}, { replace: true });
+    void create();
+  });
 
   const join = async (e: FormEvent) => {
     e.preventDefault();
@@ -101,6 +112,7 @@ export function Home() {
           </p>
         )}
       </div>
+      <SiteFooter />
     </main>
   );
 }

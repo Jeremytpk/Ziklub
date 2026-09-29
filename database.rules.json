@@ -2,20 +2,28 @@
   "rules": {
     "rooms": {
       "$code": {
+        ".write": "auth != null && !newData.exists() && (data.child('meta/djUid').val() === auth.uid || data.child('meta/createdBy').val() === auth.uid)",
         "meta": {
           ".read": "auth != null",
           ".write": "auth != null && !data.exists() && newData.child('createdBy').val() === auth.uid && newData.child('djUid').val() === auth.uid",
           ".validate": "newData.hasChildren(['createdAt', 'createdBy', 'djUid'])",
+          "createdAt": {
+            ".validate": "newData.isNumber() && (data.exists() ? newData.val() === data.val() : (newData.val() > now - 600000 && newData.val() < now + 600000))"
+          },
           "djUid": {
             ".write": "auth != null && data.exists() && root.child('rooms/' + $code + '/members/' + newData.val()).exists() && (data.val() === auth.uid || !root.child('rooms/' + $code + '/members/' + data.val()).exists())",
             ".validate": "newData.isString()"
+          },
+          "closedBy": {
+            ".write": "auth != null && (root.child('rooms/' + $code + '/meta/djUid').val() === auth.uid || root.child('rooms/' + $code + '/meta/createdBy').val() === auth.uid)",
+            ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 20"
           }
         },
         "members": {
           ".read": "auth != null",
           "$uid": {
-            ".write": "auth != null && auth.uid === $uid && root.child('rooms/' + $code + '/meta').exists()",
-            ".validate": "newData.hasChildren(['name', 'look', 'joinedAt']) && newData.child('name').isString() && newData.child('name').val().length > 0 && newData.child('name').val().length <= 20"
+            ".write": "auth != null && auth.uid === $uid && root.child('rooms/' + $code + '/meta').exists() && (!newData.exists() || !root.child('rooms/' + $code + '/meta/closedBy').exists())",
+            ".validate": "!newData.exists() || (newData.hasChildren(['name', 'look', 'joinedAt']) && newData.child('name').isString() && newData.child('name').val().length > 0 && newData.child('name').val().length <= 20)"
           }
         },
         "queue": {

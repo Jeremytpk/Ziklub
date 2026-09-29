@@ -16,3 +16,4 @@ export const resources = {
 export function detectLanguage(preferred: readonly string[] = []): Language {
   return preferred.some((l) => l.toLowerCase().startsWith('fr')) ? 'fr' : 'en';
 }
+export * from './legal';

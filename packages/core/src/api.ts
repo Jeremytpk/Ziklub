@@ -18,8 +18,8 @@ import {
   startAt,
   update,
 } from 'firebase/database';
-import { type FirebaseStorage, deleteObject, getDownloadURL, ref as sref, uploadBytesResumable } from 'firebase/storage';
-import { generateRoomCode, moveInQueue, sortQueue } from './room';
+import { type FirebaseStorage, deleteObject, getDownloadURL, listAll, ref as sref, uploadBytesResumable } from 'firebase/storage';
+import { generateRoomCode, moveInQueue, roomStatus, sortQueue } from './room';
 import type { EffectEvent, Member, Message, Playback, Reaction, RoomMeta, RoomState, SongRequest, SystemEvent, Track } from './types';
 
 export const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
@@ -33,14 +33,28 @@ type Unsubscribe = () => void;
 export function createZiklubApi(db: Database, storage: FirebaseStorage) {
   const roomRef = (code: string, path = '') => ref(db, `rooms/${code}${path ? '/' + path : ''}`);
 
+  // Server clock, so room ages are measured the same way on every device.
+  let offset = 0;
+  onValue(ref(db, '.info/serverTimeOffset'), (s) => (offset = Number(s.val()) || 0));
+  const serverNow = () => Date.now() + offset;
+
+  /** Deletes every song file of the room, then the room itself. */
+  const eraseRoom = async (code: string) => {
+    const files = await listAll(sref(storage, `rooms/${code}`)).catch(() => null);
+    await Promise.all((files?.items ?? []).map((f) => deleteObject(f).catch(() => undefined)));
+    await remove(roomRef(code));
+  };
+
   return {
     /** Server clock offset in ms (serverNow = Date.now() + offset). */
     subscribeServerOffset(cb: (offset: number) => void): Unsubscribe {
       return onValue(ref(db, '.info/serverTimeOffset'), (s) => cb(Number(s.val()) || 0));
     },
 
+    /** True if the room exists and has not been closed or reached its time limit. */
     async roomExists(code: string): Promise<boolean> {
-      return (await get(roomRef(code, 'meta'))).exists();
+      const meta = (await get(roomRef(code, 'meta'))).val() as RoomMeta | null;
+      return roomStatus(meta, serverNow()) === 'open';
     },
 
     /** Creates a room with a fresh code. The creator is the first DJ. */
@@ -49,7 +63,7 @@ export function createZiklubApi(db: Database, storage: FirebaseStorage) {
         const code = generateRoomCode();
         const res = await runTransaction(roomRef(code, 'meta'), (cur) => {
           if (cur !== null) return; // taken, abort
-          return { createdAt: Date.now(), createdBy: uid, djUid: uid } satisfies RoomMeta;
+          return { createdAt: serverNow(), createdBy: uid, djUid: uid } satisfies RoomMeta;
         });
         if (res.committed) return code;
       }
@@ -62,6 +76,20 @@ export function createZiklubApi(db: Database, storage: FirebaseStorage) {
       await onDisconnect(me).remove();
       await set(me, { name: profile.name, look: profile.look, joinedAt: serverTimestamp() });
     },
+
+    /**
+     * DJ or creator: closes the room for everyone. Members are told who closed it, then all its data
+     * and songs are erased.
+     */
+    async closeRoom(code: string, byName: string): Promise<void> {
+      await set(roomRef(code, 'meta/closedBy'), byName.slice(0, 20) || '…');
+      // Give everyone a moment to receive the notice before the data disappears.
+      await new Promise((r) => setTimeout(r, 1500));
+      await eraseRoom(code);
+    },
+
+    /** DJ or creator: deletes every song file of the room, then the room itself. */
+    eraseRoom,
 
     async leaveRoom(code: string, uid: string): Promise<void> {
       const me = roomRef(code, `members/${uid}`);

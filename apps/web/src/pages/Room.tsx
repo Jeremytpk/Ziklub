@@ -1,4 +1,4 @@
-import { isEffect, MAX_UPLOAD_BYTES, type Effect, type Member, type SongRequest } from '@ziklub/core';
+import { isEffect, MAX_UPLOAD_BYTES, roomEndsAt, type Effect, type Member, type SongRequest } from '@ziklub/core';
 import type { Mood } from '@ziklub/zu';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -7,6 +7,8 @@ import { IconBack, IconShare, IconSound } from '../components/Icons';
 import { ProfileEditor } from '../components/ProfileEditor';
 import { ChatList, MessageForm } from '../components/room/Chat';
 import { EffectFlash, FxSheet, type FlashHandle } from '../components/room/Effects';
+import { EndedScreen } from '../components/room/EndedScreen';
+import { LeaveSheet } from '../components/room/LeaveSheet';
 import { MembersSheet } from '../components/room/MembersSheet';
 import { Player } from '../components/room/Player';
 import { QueueSheet, type Upload } from '../components/room/QueueSheet';
@@ -20,12 +22,12 @@ import { playFx } from '../lib/fx';
 import { quiet } from '../lib/quiet';
 import type { Profile } from '../lib/profile';
 
-type Panel = 'queue' | 'members' | 'look' | 'fx' | null;
+type Panel = 'queue' | 'members' | 'look' | 'fx' | 'leave' | null;
 
 export function Room({ code, uid, profile, onProfileChange }: { code: string; uid: string; profile: Profile; onProfileChange: (p: Profile) => void }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const { state, messages, requests, isDj, currentTrack, dj, soundBlocked, resumeSound } = useRoom(code, uid, profile);
+  const { state, messages, requests, isDj, isCreator, currentTrack, dj, soundBlocked, resumeSound, ended, endingSoon } = useRoom(code, uid, profile);
   const [panel, setPanel] = useState<Panel>(null);
   const [uploads, setUploads] = useState<Upload[]>([]);
   const [toast, setToast] = useState<string | null>(null);
@@ -88,6 +90,35 @@ export function Room({ code, uid, profile, onProfileChange }: { code: string; ui
     playFx(fx);
     flash.current?.show(fx, profile.name);
     quiet(api.sendEffect(code, uid, fx));
+  };
+
+  // Five minutes before the 3-hour limit, tell everyone once.
+  const warned = useRef(false);
+  useEffect(() => {
+    if (endingSoon && !warned.current) {
+      warned.current = true;
+      showToast(t('room.endingSoon'));
+    }
+  }, [endingSoon, showToast, t]);
+
+  const leave = async (handTo?: Member) => {
+    setPanel(null);
+    if (isDj) {
+      try {
+        await dj.handOff(handTo);
+      } catch {
+        // Leaving anyway: the room gives the aux to the longest-present member on its own.
+      }
+    }
+    navigate('/');
+  };
+  const closeRoom = async () => {
+    setPanel(null);
+    try {
+      await dj.closeRoom();
+    } catch {
+      showToast(t('home.error'));
+    }
   };
 
   const react = (m: Mood) => quiet(api.sendReaction(code, uid, m));
@@ -163,10 +194,12 @@ export function Room({ code, uid, profile, onProfileChange }: { code: string; ui
     }
   };
 
+  if (ended) return <EndedScreen end={ended} />;
+
   return (
     <div className="room">
       <header className="room-top">
-        <button type="button" className="icon-btn" onClick={() => navigate('/')} aria-label={t('room.leave')}>
+        <button type="button" className="icon-btn" onClick={() => (isDj || isCreator ? setPanel('leave') : navigate('/'))} aria-label={t('room.leave')}>
           <IconBack />
         </button>
         <button type="button" className="code-chip" onClick={share} aria-label={t('room.share')}>
@@ -242,6 +275,17 @@ export function Room({ code, uid, profile, onProfileChange }: { code: string; ui
           onClose={() => setPanel(null)}
         />
       )}
+      {panel === 'leave' && (
+        <LeaveSheet
+          uid={uid}
+          isDj={isDj}
+          isCreator={isCreator}
+          members={state.members}
+          onLeave={(m) => void leave(m)}
+          onCloseRoom={() => void closeRoom()}
+          onClose={() => setPanel(null)}
+        />
+      )}
       {panel === 'fx' && isDj && <FxSheet onFire={fireFx} onClose={() => setPanel(null)} />}
       {panel === 'members' && (
         <MembersSheet
@@ -251,6 +295,7 @@ export function Room({ code, uid, profile, onProfileChange }: { code: string; ui
           isDj={isDj}
           onPassAux={passAux}
           onEditLook={() => setPanel('look')}
+          endsAt={state.meta ? roomEndsAt(state.meta) : undefined}
           onClose={() => setPanel(null)}
         />
       )}
