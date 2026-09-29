@@ -7,13 +7,12 @@ import { LangToggle } from '../components/LangToggle';
 import { LogoMark } from '../components/Logo';
 import { MoodBlob } from '../components/MoodBlob';
 import { SiteFooter } from '../components/SiteFooter';
-import { useAuthUser } from '../lib/firebase';
+import { ensureSignedIn } from '../lib/firebase';
 import { firestore } from '../lib/firestore';
 
 /** /contact — send a message or feedback to the team. Stored in Firestore (collection "feedback"). */
 export default function ContactPage() {
   const { t, i18n } = useTranslation();
-  const { user } = useAuthUser();
   const [params] = useSearchParams();
   const initialTopic = (FEEDBACK_TOPICS as readonly string[]).includes(params.get('topic') ?? '') ? (params.get('topic') as FeedbackTopic) : 'feedback';
   const [topic, setTopic] = useState<FeedbackTopic>(initialTopic);
@@ -37,13 +36,10 @@ export default function ContactPage() {
       setError(problem);
       return;
     }
-    if (!user) {
-      setError('send');
-      return;
-    }
     setState('sending');
     setError(null);
     try {
+      const user = await ensureSignedIn();
       await sendFeedback(firestore, user.uid, { topic, message, name, email }, { lang: i18n.language, platform: 'web' });
       setState('sent');
       setMessage('');

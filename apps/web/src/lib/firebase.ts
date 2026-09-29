@@ -67,6 +67,13 @@ export function useAuthUser(): { user: User | null; error: boolean } {
   return { user, error };
 }
 
+/** The signed-in (anonymous) user, signing in first if that hasn't happened yet. */
+export async function ensureSignedIn(): Promise<User> {
+  await auth.authStateReady();
+  if (auth.currentUser) return auth.currentUser;
+  return (await signInAnonymously(auth)).user;
+}
+
 // ----- Shared server clock -----
 
 let offset = 0;
