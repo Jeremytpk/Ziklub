@@ -1,0 +1,46 @@
+{
+  "rules": {
+    "rooms": {
+      "$code": {
+        ".read": "auth != null",
+        "meta": {
+          ".write": "auth != null && !data.exists() && newData.child('createdBy').val() === auth.uid && newData.child('djUid').val() === auth.uid",
+          ".validate": "newData.hasChildren(['createdAt', 'createdBy', 'djUid'])",
+          "djUid": {
+            ".write": "auth != null && data.exists() && root.child('rooms/' + $code + '/members/' + newData.val()).exists() && (data.val() === auth.uid || !root.child('rooms/' + $code + '/members/' + data.val()).exists())",
+            ".validate": "newData.isString()"
+          }
+        },
+        "members": {
+          "$uid": {
+            ".write": "auth != null && auth.uid === $uid && root.child('rooms/' + $code + '/meta').exists()",
+            ".validate": "newData.hasChildren(['name', 'look', 'joinedAt']) && newData.child('name').isString() && newData.child('name').val().length > 0 && newData.child('name').val().length <= 20"
+          }
+        },
+        "queue": {
+          "$trackId": {
+            ".write": "auth != null && root.child('rooms/' + $code + '/meta/djUid').val() === auth.uid",
+            ".validate": "newData.hasChildren(['title', 'duration', 'url', 'path', 'addedBy', 'addedAt']) && newData.child('title').isString() && newData.child('title').val().length <= 200 && newData.child('duration').isNumber()"
+          }
+        },
+        "playback": {
+          ".write": "auth != null && root.child('rooms/' + $code + '/meta/djUid').val() === auth.uid",
+          ".validate": "newData.hasChildren(['playing', 'position', 'updatedAt']) && newData.child('playing').isBoolean() && newData.child('position').isNumber()"
+        },
+        "messages": {
+          "$id": {
+            ".write": "auth != null && !data.exists() && newData.child('uid').val() === auth.uid && root.child('rooms/' + $code + '/members/' + auth.uid).exists()",
+            ".validate": "newData.hasChildren(['uid', 'kind', 'ts']) && (newData.child('kind').val() === 'system' || (newData.child('kind').val() === 'user' && newData.child('text').isString() && newData.child('text').val().length > 0 && newData.child('text').val().length <= 500))"
+          }
+        },
+        "reactions": {
+          ".indexOn": ["ts"],
+          "$id": {
+            ".write": "auth != null && !data.exists() && newData.child('uid').val() === auth.uid && root.child('rooms/' + $code + '/members/' + auth.uid).exists()",
+            ".validate": "newData.hasChildren(['uid', 'mood', 'ts']) && newData.child('mood').isString() && newData.child('mood').val().length <= 20"
+          }
+        }
+      }
+    }
+  }
+}

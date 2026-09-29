@@ -1,0 +1,21 @@
+{
+  "name": "ziklub",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev -w @ziklub/web",
+    "emulators": "firebase emulators:start --project demo-ziklub",
+    "build": "npm run build -w @ziklub/web",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "vitest run",
+    "test:emulators": "vitest run --config vitest.emulators.config.mts"
+  },
+  "devDependencies": {
+    "firebase": "^12.19.0",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.11"
+  }
+}

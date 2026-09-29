@@ -1,0 +1,178 @@
+import {
+  auxSuccessor,
+  expectedPosition,
+  nextTrack,
+  PlaybackSync,
+  previousTrack,
+  type Message,
+  type RoomState,
+  type Track,
+} from '@ziklub/core';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { engine } from '../lib/audio';
+import { api, serverNow } from '../lib/firebase';
+import type { Profile } from '../lib/profile';
+
+const EMPTY: RoomState = { meta: null, members: [], queue: [], playback: null };
+
+/** Joins the room and exposes its live state, the synced player and the DJ actions. */
+export function useRoom(code: string, uid: string, profile: Profile) {
+  const [state, setState] = useState<RoomState>(EMPTY);
+  const [ready, setReady] = useState(false);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [soundBlocked, setSoundBlocked] = useState(false);
+  const stateRef = useRef(state);
+  stateRef.current = state;
+
+  const isDj = !!state.meta && state.meta.djUid === uid;
+  const isDjRef = useRef(isDj);
+  isDjRef.current = isDj;
+
+  const currentTrack: Track | null = useMemo(
+    () => state.queue.find((t) => t.id === state.playback?.trackId) ?? null,
+    [state.queue, state.playback?.trackId],
+  );
+
+  // ----- Join / leave -----
+  const profileRef = useRef(profile);
+  profileRef.current = profile;
+  useEffect(() => {
+    const p = profileRef.current;
+    api
+      .joinRoom(code, uid, { name: p.name, look: { ...p.look } })
+      .then(() => {
+        // Only announce the first arrival in this browser tab, not every refresh.
+        const key = `ziklub.joined.${code}`;
+        if (!sessionStorage.getItem(key)) {
+          sessionStorage.setItem(key, '1');
+          void api.sendSystem(code, uid, 'join', { name: p.name });
+        }
+      })
+      .catch(() => undefined);
+    const offRoom = api.subscribeRoom(code, (s) => {
+      setState(s);
+      setReady(true);
+    });
+    const offMsgs = api.subscribeMessages(code, setMessages);
+    return () => {
+      offRoom();
+      offMsgs();
+      engine.stop();
+      void api.leaveRoom(code, uid).catch(() => undefined);
+    };
+  }, [code, uid]);
+
+  // ----- Keep the local player in sync with the room -----
+  const sync = useMemo(() => new PlaybackSync(engine, serverNow, { onBlocked: () => setSoundBlocked(true) }), []);
+
+  useEffect(() => {
+    sync.apply(state.playback, currentTrack);
+  }, [sync, state.playback, currentTrack]);
+
+  const setPlayback = useCallback(
+    (trackId: string | null, playing: boolean, position: number) => {
+      if (!isDjRef.current) return;
+      void api.setPlayback(code, { trackId, playing, position: Math.max(0, position) });
+    },
+    [code],
+  );
+
+  const goNext = useCallback(() => {
+    const { queue, playback } = stateRef.current;
+    const n = nextTrack(queue, playback?.trackId ?? null);
+    if (n) setPlayback(n.id, true, 0);
+    else if (playback?.trackId) setPlayback(playback.trackId, false, 0);
+  }, [setPlayback]);
+
+  // Drift correction for everyone; the DJ also moves on when a song is over.
+  const advancedFrom = useRef<string | null>(null);
+  useEffect(() => {
+    const id = setInterval(() => {
+      sync.tick();
+      const { playback, queue } = stateRef.current;
+      if (!isDjRef.current || !playback?.playing || !playback.trackId) return;
+      const tr = queue.find((t) => t.id === playback.trackId);
+      if (!tr?.duration) return;
+      if (expectedPosition(playback, serverNow()) >= tr.duration + 0.4 && advancedFrom.current !== playback.trackId) {
+        advancedFrom.current = playback.trackId;
+        goNext();
+      }
+    }, 1000);
+    const onEnded = () => {
+      const pb = stateRef.current.playback;
+      if (isDjRef.current && pb?.trackId && advancedFrom.current !== pb.trackId) {
+        advancedFrom.current = pb.trackId;
+        goNext();
+      }
+    };
+    engine.el.addEventListener('ended', onEnded);
+    return () => {
+      clearInterval(id);
+      engine.el.removeEventListener('ended', onEnded);
+    };
+  }, [sync, goNext]);
+
+  // Lock-screen / notification controls on phones.
+  useEffect(() => {
+    if (!('mediaSession' in navigator) || !currentTrack) return;
+    navigator.mediaSession.metadata = new MediaMetadata({ title: currentTrack.title, artist: 'Ziklub', album: `Room ${code}` });
+  }, [currentTrack, code]);
+
+  // ----- If the DJ left, the longest-present member takes the aux -----
+  useEffect(() => {
+    const dj = state.meta?.djUid;
+    if (!state.meta || auxSuccessor(dj, state.members) !== uid) return;
+    api.claimAux(code, uid, dj).then((ok) => {
+      if (ok) void api.sendSystem(code, uid, 'claim', { name: profileRef.current.name });
+    });
+  }, [state.meta, state.members, code, uid]);
+
+  // ----- DJ actions -----
+  const position = () => (stateRef.current.playback ? expectedPosition(stateRef.current.playback, serverNow()) : 0);
+
+  const dj = useMemo(
+    () => ({
+      play() {
+        const { playback, queue } = stateRef.current;
+        if (playback?.trackId && queue.some((t) => t.id === playback.trackId)) setPlayback(playback.trackId, true, position());
+        else if (queue[0]) setPlayback(queue[0].id, true, 0);
+      },
+      pause() {
+        const pb = stateRef.current.playback;
+        if (pb?.trackId) setPlayback(pb.trackId, false, position());
+      },
+      next: goNext,
+      previous() {
+        const { playback, queue } = stateRef.current;
+        const p = previousTrack(queue, playback?.trackId ?? null);
+        if (position() > 5 || !p) setPlayback(playback?.trackId ?? null, !!playback?.playing, 0);
+        else setPlayback(p.id, true, 0);
+      },
+      playTrack(t: Track) {
+        setPlayback(t.id, true, 0);
+      },
+      seek(seconds: number) {
+        const pb = stateRef.current.playback;
+        if (pb?.trackId) setPlayback(pb.trackId, pb.playing, seconds);
+      },
+      async removeTrack(t: Track) {
+        if (stateRef.current.playback?.trackId === t.id) goNext();
+        await api.removeTrack(code, t);
+      },
+      /** Start playing a freshly uploaded song if nothing is playing yet. */
+      startIfIdle(t: Track) {
+        const pb = stateRef.current.playback;
+        // Nothing chosen yet, or the queue finished (stopped at 0): play the new song.
+        if (!pb?.trackId || (!pb.playing && pb.position === 0)) setPlayback(t.id, true, 0);
+      },
+    }),
+    [code, goNext, setPlayback],
+  );
+
+  const resumeSound = useCallback(() => {
+    setSoundBlocked(false);
+    sync.resume();
+  }, [sync]);
+
+  return { state, ready, messages, isDj, currentTrack, dj, soundBlocked, resumeSound };
+}
