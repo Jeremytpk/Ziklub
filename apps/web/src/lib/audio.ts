@@ -29,10 +29,13 @@ class HtmlAudioEngine implements AudioEngine {
   readonly el: HTMLAudioElement;
   private url: string | null = null;
   private pendingSeek: number | null = null;
+  /** Development counters, read by end-to-end tests. */
+  readonly stats = { seeks: 0, rateChanges: 0, waiting: 0 };
 
   constructor() {
     this.el = new Audio();
     this.el.preload = 'auto';
+    this.el.addEventListener('waiting', () => this.stats.waiting++);
     this.el.addEventListener('loadedmetadata', () => {
       if (this.pendingSeek !== null) {
         this.el.currentTime = this.pendingSeek;
@@ -69,12 +72,20 @@ class HtmlAudioEngine implements AudioEngine {
   }
 
   seek(seconds: number) {
+    this.stats.seeks++;
     if (this.el.readyState < 1) this.pendingSeek = seconds;
     else this.el.currentTime = seconds;
   }
 
+  isReady() {
+    return this.el.readyState >= 3 && !this.el.seeking;
+  }
+
   setRate(rate: number) {
-    if (Math.abs(this.el.playbackRate - rate) > 0.001) this.el.playbackRate = rate;
+    if (Math.abs(this.el.playbackRate - rate) > 0.001) {
+      this.stats.rateChanges++;
+      this.el.playbackRate = rate;
+    }
   }
 
   /** Must be called from a tap/click. */
@@ -98,6 +109,14 @@ class HtmlAudioEngine implements AudioEngine {
 }
 
 export const engine = new HtmlAudioEngine();
+
+/** Safari and every iPhone/iPad browser use WebKit, where small speed changes can crackle. */
+export const isWebKitAudio = (() => {
+  const ua = navigator.userAgent;
+  const iOS = /iP(hone|ad|od)/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const safari = /^((?!chrome|chromium|android|crios|fxios|edg).)*safari/i.test(ua);
+  return iOS || safari;
+})();
 
 /** Reads the duration of a local audio file (seconds), or 0 if the browser can't tell. */
 export function readDuration(file: File): Promise<number> {
@@ -150,4 +169,4 @@ export function formatTime(s: number): string {
 }
 
 // Development only: lets end-to-end tests check that phones stay in sync.
-if (import.meta.env.DEV) (window as unknown as { __zkAudio: HTMLAudioElement }).__zkAudio = engine.el;
+if (import.meta.env.DEV) Object.assign(window, { __zkAudio: engine.el, __zkStats: engine.stats });

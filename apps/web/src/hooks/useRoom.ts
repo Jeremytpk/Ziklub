@@ -9,10 +9,11 @@ import {
   type Track,
 } from '@ziklub/core';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { engine } from '../lib/audio';
+import { engine, isWebKitAudio } from '../lib/audio';
 import { api, serverNow } from '../lib/firebase';
 import type { Profile } from '../lib/profile';
 
+const LEAD_KEY = 'ziklub.seekLead';
 const EMPTY: RoomState = { meta: null, members: [], queue: [], playback: null };
 
 /** Joins the room and exposes its live state, the synced player and the DJ actions. */
@@ -63,7 +64,36 @@ export function useRoom(code: string, uid: string, profile: Profile) {
   }, [code, uid]);
 
   // ----- Keep the local player in sync with the room -----
-  const sync = useMemo(() => new PlaybackSync(engine, serverNow, { onBlocked: () => setSoundBlocked(true) }), []);
+  const sync = useMemo(
+    () =>
+      new PlaybackSync(engine, serverNow, {
+        allowRate: !isWebKitAudio,
+        onBlocked: () => setSoundBlocked(true),
+        onTick: import.meta.env.DEV ? (d) => (window as unknown as { __zkDiffs?: number[] }).__zkDiffs?.push(d) : undefined,
+      }),
+    [],
+  );
+
+  // Each device remembers how late it resumes after a jump, so the next session starts smooth.
+  useEffect(() => {
+    try {
+      sync.lead = Number(localStorage.getItem(LEAD_KEY)) || 0;
+    } catch {
+      // ignore
+    }
+    const save = () => {
+      try {
+        localStorage.setItem(LEAD_KEY, String(sync.lead));
+      } catch {
+        // ignore
+      }
+    };
+    const id = setInterval(save, 15000);
+    return () => {
+      clearInterval(id);
+      save();
+    };
+  }, [sync]);
 
   useEffect(() => {
     sync.apply(state.playback, currentTrack);

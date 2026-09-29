@@ -45,40 +45,91 @@ describe('auxSuccessor', () => {
 });
 
 describe('PlaybackSync', () => {
-  function fakeEngine() {
+  /**
+   * A fake player. `seekDelay` simulates Safari: after a jump, the sound resumes late,
+   * so the player's time lands `seekDelay` seconds behind where it was asked to go.
+   */
+  function fakeEngine(seekDelay = 0) {
     const e = {
       src: null as string | null,
       paused: true,
       time: 0,
       rate: 1,
+      seeks: 0,
+      rateChanges: 0,
       load(url: string) { e.src = url; e.time = 0; },
       async play() { e.paused = false; },
       pause() { e.paused = true; },
       getTime: () => e.time,
-      seek(s: number) { e.time = s; },
-      setRate(r: number) { e.rate = r; },
+      seek(s: number) { e.seeks++; e.time = s - seekDelay; },
+      setRate(r: number) { if (r !== e.rate) e.rateChanges++; e.rate = r; },
+      /** Advance real time by `sec` seconds while playing. */
+      advance(sec: number) { if (!e.paused) e.time += sec * e.rate; },
     };
-    return e satisfies AudioEngine & { time: number; rate: number };
+    return e satisfies AudioEngine;
+  }
+
+  function setup(seekDelay = 0, allowRate = true) {
+    const e = fakeEngine(seekDelay);
+    const clock = { now: 100_000 };
+    const sync = new PlaybackSync(e, () => clock.now, { allowRate, now: () => clock.now });
+    const run = (seconds: number) => {
+      for (let i = 0; i < seconds; i++) {
+        clock.now += 1000;
+        e.advance(1);
+        sync.tick();
+      }
+    };
+    return { e, clock, sync, run };
   }
 
   it('loads, seeks and plays to match the room', async () => {
-    const e = fakeEngine();
-    let now = 10_000;
-    const sync = new PlaybackSync(e, () => now);
-    sync.apply({ trackId: 'a', playing: true, position: 30, updatedAt: 8_000 }, track('a', 1));
+    const { e, sync, clock } = setup();
+    sync.apply({ trackId: 'a', playing: true, position: 30, updatedAt: clock.now - 2000 }, track('a', 1));
     await Promise.resolve();
     expect(e.src).toBe('u/a');
     expect(e.time).toBeCloseTo(32);
     expect(e.paused).toBe(false);
-    // Drifted 0.2s ahead: slows down slightly instead of jumping.
-    now = 11_000;
-    e.time = 33.2;
-    sync.tick();
+  });
+
+  it('nudges the speed for small drift instead of jumping', () => {
+    const { e, sync, clock, run } = setup();
+    sync.apply({ trackId: 'a', playing: true, position: 0, updatedAt: clock.now }, track('a', 1));
+    e.time += 0.15; // 150 ms ahead
+    run(3);
+    expect(e.seeks).toBe(0); // small drift: no jump at all
     expect(e.rate).toBeLessThan(1);
-    expect(e.time).toBe(33.2);
-    // Drifted 2s: jumps.
-    e.time = 35;
-    sync.tick();
-    expect(e.time).toBeCloseTo(33);
+    run(10);
+    expect(e.rate).toBe(1); // back in sync, normal speed
+    expect(Math.abs(e.time - (clock.now - 100_000) / 1000)).toBeLessThan(0.05);
+  });
+
+  it('does not stutter on a device that resumes late after each jump (Safari)', () => {
+    const { e, sync, clock, run } = setup(0.45, false);
+    sync.apply({ trackId: 'a', playing: true, position: 10, updatedAt: clock.now }, track('a', 1));
+    run(60);
+    // Old behaviour: a jump every second. Now: it learns the delay and settles after a jump or two.
+    expect(e.seeks).toBeLessThanOrEqual(3);
+    expect(sync.lead).toBeCloseTo(0.45, 1);
+    const expected = 10 + (clock.now - 100_000) / 1000;
+    expect(Math.abs(e.time - expected)).toBeLessThan(0.1);
+    expect(e.rateChanges).toBe(0);
+  });
+
+  it('never jumps twice within the cooldown', () => {
+    const { e, sync, clock, run } = setup(0.45, false);
+    sync.apply({ trackId: 'a', playing: true, position: 0, updatedAt: clock.now }, track('a', 1));
+    const before = e.seeks;
+    run(5);
+    expect(e.seeks - before).toBeLessThanOrEqual(1);
+  });
+
+  it('corrects a big drift with a jump', () => {
+    const { e, sync, clock, run } = setup();
+    sync.apply({ trackId: 'a', playing: true, position: 0, updatedAt: clock.now }, track('a', 1));
+    run(10);
+    e.time += 3; // e.g. the phone was busy
+    run(4);
+    expect(Math.abs(e.time - (clock.now - 100_000) / 1000)).toBeLessThan(0.1);
   });
 });
