@@ -2,10 +2,10 @@
 // Two friends (A = DJ, B = listener) exercise the API and the security rules.
 import { deleteApp, initializeApp, type FirebaseApp } from 'firebase/app';
 import { connectAuthEmulator, getAuth, signInAnonymously } from 'firebase/auth';
-import { connectDatabaseEmulator, getDatabase, goOffline, ref, set } from 'firebase/database';
+import { connectDatabaseEmulator, get, getDatabase, goOffline, ref, set } from 'firebase/database';
 import { connectStorageEmulator, getStorage } from 'firebase/storage';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { createZiklubApi, type RoomState, type ZiklubApi } from '../src';
+import { createZiklubApi, type RoomState, type SongRequest, type ZiklubApi } from '../src';
 
 const config = {
   apiKey: 'demo-key',
@@ -47,15 +47,17 @@ function nextState(c: Client, code: string, until: (s: RoomState) => boolean): P
 
 let A: Client;
 let B: Client;
+let C: Client;
 let code: string;
 
 beforeAll(async () => {
   A = await client('A');
   B = await client('B');
+  C = await client('C');
 });
 
 afterAll(async () => {
-  for (const c of [A, B]) {
+  for (const c of [A, B, C]) {
     goOffline(c.db);
     await deleteApp(c.app);
   }
@@ -79,7 +81,7 @@ describe('a room with two friends', () => {
 
   it('only the DJ can upload and control playback', async () => {
     const song = new Blob([new Uint8Array(2048)], { type: 'audio/mpeg' });
-    const track = await A.api.addTrack(code, A.uid, song, { title: 'Nuit blanche', duration: 180, contentType: 'audio/mpeg' });
+    const track = await A.api.addTrack(code, A.uid, song, { title: 'Nuit blanche', duration: 180, contentType: 'audio/mpeg', addedByName: 'Maya', asRequest: false });
     expect(track.url).toContain('http');
     await A.api.setPlayback(code, { trackId: track.id, playing: true, position: 0 });
     const s = await nextState(B, code, (x) => !!x.playback?.playing && x.queue.length === 1);
@@ -118,11 +120,74 @@ describe('a room with two friends', () => {
     await expect(A.api.setPlayback(code, { trackId: null, playing: true, position: 0 })).rejects.toThrow();
   });
 
-  it('when the DJ leaves, the remaining member can claim the aux', async () => {
-    await B.api.leaveRoom(code, B.uid);
-    const ok = await A.api.claimAux(code, A.uid, B.uid);
-    expect(ok).toBe(true);
-    const s = await nextState(A, code, (x) => x.meta?.djUid === A.uid);
+  it('the DJ can hand the aux back', async () => {
+    await B.api.passAux(code, A.uid);
+    const s = await nextState(B, code, (x) => x.meta?.djUid === A.uid);
     expect(s.meta?.djUid).toBe(A.uid);
+  });
+
+  describe('song suggestions', () => {
+    const song = () => new Blob([new Uint8Array(1024)], { type: 'audio/mpeg' });
+    const firstList = (sub: (cb: (r: SongRequest[]) => void) => () => void, until: (r: SongRequest[]) => boolean) =>
+      new Promise<SongRequest[]>((resolve) => {
+        const off = sub((r) => {
+          if (until(r)) {
+            setTimeout(off, 0);
+            resolve(r);
+          }
+        });
+      });
+    let req: SongRequest;
+
+    it('a member suggests a song: private to them and the DJ', async () => {
+      await C.api.joinRoom(code, C.uid, { name: 'Léa', look: { body: 'pink' } });
+      const t = await B.api.addTrack(code, B.uid, song(), { title: 'Idée de Karim', duration: 120, contentType: 'audio/mpeg', addedByName: 'Karim', asRequest: true });
+      // The DJ sees it
+      const forDj = await firstList((cb) => A.api.subscribeRequests(code, cb), (r) => r.length === 1);
+      req = forDj[0];
+      expect(req.id).toBe(t.id);
+      expect(req.addedByName).toBe('Karim');
+      // The suggester sees their own
+      const mine = await firstList((cb) => B.api.subscribeMyRequests(code, B.uid, cb), (r) => r.length === 1);
+      expect(mine[0].title).toBe('Idée de Karim');
+      // Another member sees nothing: not the list, not the item, not via their own query
+      await expect(get(ref(C.db, `rooms/${code}/requests`))).rejects.toThrow();
+      await expect(get(ref(C.db, `rooms/${code}/requests/${req.id}`))).rejects.toThrow();
+      expect(await firstList((cb) => C.api.subscribeMyRequests(code, C.uid, cb), () => true)).toEqual([]);
+      // It is not in the queue yet
+      const s = await nextState(C, code, () => true);
+      expect(s.queue.some((q) => q.id === req.id)).toBe(false);
+    });
+
+    it('members cannot approve, fake or delete other people\'s suggestions', async () => {
+      await expect(C.api.approveRequest(code, C.uid, 'Léa', req)).rejects.toThrow();
+      await expect(C.api.removeRequest(code, req)).rejects.toThrow();
+      const { id: _id, ...data } = req;
+      await expect(set(ref(C.db, `rooms/${code}/requests/fake`), { ...data, addedBy: B.uid })).rejects.toThrow(/permission/i);
+    });
+
+    it('the DJ approves: it joins the queue, visible to everyone', async () => {
+      await A.api.approveRequest(code, A.uid, 'Maya', req);
+      const s = await nextState(C, code, (x) => x.queue.some((q) => q.id === req.id));
+      expect(s.queue.find((q) => q.id === req.id)?.addedByName).toBe('Karim');
+      expect(await firstList((cb) => A.api.subscribeRequests(code, cb), (r) => r.length === 0)).toEqual([]);
+    });
+
+    it('the DJ declines, or the member cancels', async () => {
+      await B.api.addTrack(code, B.uid, song(), { title: 'Bof', duration: 60, contentType: 'audio/mpeg', addedByName: 'Karim', asRequest: true });
+      await B.api.addTrack(code, B.uid, song(), { title: 'Oups', duration: 60, contentType: 'audio/mpeg', addedByName: 'Karim', asRequest: true });
+      const pending = await firstList((cb) => A.api.subscribeRequests(code, cb), (r) => r.length === 2);
+      await A.api.removeRequest(code, pending.find((r) => r.title === 'Bof')!);
+      await B.api.removeRequest(code, pending.find((r) => r.title === 'Oups')!);
+      expect(await firstList((cb) => A.api.subscribeRequests(code, cb), (r) => r.length === 0)).toEqual([]);
+    });
+  });
+
+  it('when the DJ leaves, the remaining member can claim the aux', async () => {
+    await A.api.leaveRoom(code, A.uid);
+    const ok = await B.api.claimAux(code, B.uid, A.uid);
+    expect(ok).toBe(true);
+    const s = await nextState(B, code, (x) => x.meta?.djUid === B.uid);
+    expect(s.meta?.djUid).toBe(B.uid);
   });
 });

@@ -14,6 +14,8 @@ interface Props {
   isDj: boolean;
   addedByName: string | undefined;
   queueCount: number;
+  /** DJ only: suggestions waiting for approval. */
+  pendingCount: number;
   onPlay: () => void;
   onPause: () => void;
   onNext: () => void;
@@ -22,7 +24,7 @@ interface Props {
   onOpenQueue: () => void;
 }
 
-export function Player({ track, playback, dj, isDj, addedByName, queueCount, onPlay, onPause, onNext, onPrevious, onSeek, onOpenQueue }: Props) {
+export function Player({ track, playback, dj, isDj, addedByName, queueCount, pendingCount, onPlay, onPause, onNext, onPrevious, onSeek, onOpenQueue }: Props) {
   const { t } = useTranslation();
   const [pos, setPos] = useState(0);
   const playing = !!playback?.playing && !!track;
@@ -54,7 +56,13 @@ export function Player({ track, playback, dj, isDj, addedByName, queueCount, onP
       </div>
       <button type="button" className="icon-btn queue-btn" onClick={onOpenQueue} aria-label={t('room.queue')}>
         <IconQueue />
-        {queueCount > 0 && <span className="badge">{queueCount}</span>}
+        {pendingCount > 0 ? (
+          <span className="badge badge-alert" aria-label={t('room.suggestions')}>
+            {pendingCount}
+          </span>
+        ) : (
+          queueCount > 0 && <span className="badge">{queueCount}</span>
+        )}
       </button>
 
       <div className={`progress${isDj ? ' seekable' : ''}`}>

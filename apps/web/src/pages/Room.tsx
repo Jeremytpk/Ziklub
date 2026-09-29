@@ -1,4 +1,4 @@
-import { MAX_UPLOAD_BYTES, type Member } from '@ziklub/core';
+import { MAX_UPLOAD_BYTES, type Member, type SongRequest } from '@ziklub/core';
 import type { Mood } from '@ziklub/zu';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -22,7 +22,7 @@ type Panel = 'queue' | 'members' | 'look' | null;
 export function Room({ code, uid, profile, onProfileChange }: { code: string; uid: string; profile: Profile; onProfileChange: (p: Profile) => void }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const { state, messages, isDj, currentTrack, dj, soundBlocked, resumeSound } = useRoom(code, uid, profile);
+  const { state, messages, requests, isDj, currentTrack, dj, soundBlocked, resumeSound } = useRoom(code, uid, profile);
   const [panel, setPanel] = useState<Panel>(null);
   const [uploads, setUploads] = useState<Upload[]>([]);
   const [toast, setToast] = useState<string | null>(null);
@@ -35,6 +35,35 @@ export function Room({ code, uid, profile, onProfileChange }: { code: string; ui
     setToast(msg);
     setTimeout(() => setToast((cur) => (cur === msg ? null : cur)), 2600);
   }, []);
+
+  // Suggestion notices: the DJ hears about new ones, the suggester hears whether theirs was added.
+  const queueRef = useRef(state.queue);
+  queueRef.current = state.queue;
+  const cancelled = useRef(new Set<string>());
+  const prevRequests = useRef<{ dj: boolean; byId: Map<string, SongRequest> } | null>(null);
+  useEffect(() => {
+    const byId = new Map(requests.map((r) => [r.id, r]));
+    const prev = prevRequests.current;
+    prevRequests.current = { dj: isDj, byId };
+    if (!prev || prev.dj !== isDj) return; // first load, or the aux changed hands
+    if (isDj) {
+      const fresh = requests.filter((r) => !prev.byId.has(r.id) && r.addedBy !== uid);
+      const last = fresh[fresh.length - 1];
+      if (last) {
+        showToast(t('room.newSuggestion', { name: last.addedByName, title: last.title }));
+        navigator.vibrate?.(20);
+      }
+      return;
+    }
+    for (const [id, r] of prev.byId) {
+      if (byId.has(id) || cancelled.current.delete(id)) continue;
+      // Approval moves it to the queue in the same write; give the queue update a moment to arrive.
+      setTimeout(() => {
+        const added = queueRef.current.some((q) => q.id === id);
+        showToast(t(added ? 'room.suggestionApproved' : 'room.suggestionDeclined', { title: r.title }));
+      }, 400);
+    }
+  }, [requests, isDj, uid, showToast, t]);
 
   // Reactions from everyone (including me) float over the chat.
   useEffect(() => api.subscribeReactions(code, serverNow(), (r) => floats.current?.add(r.mood)), [code]);
@@ -77,10 +106,12 @@ export function Room({ code, uid, profile, onProfileChange }: { code: string; ui
       setUploads((u) => [...u, { id, name: title, progress: 0 }]);
       try {
         const duration = await readDuration(file);
-        const track = await api.addTrack(code, uid, file, { title, duration, contentType: type }, (p) =>
+        const asRequest = !isDj;
+        const track = await api.addTrack(code, uid, file, { title, duration, contentType: type, addedByName: profile.name, asRequest }, (p) =>
           setUploads((u) => u.map((x) => (x.id === id ? { ...x, progress: p } : x))),
         );
-        dj.startIfIdle(track);
+        if (asRequest) showToast(t('room.suggestionSent', { title }));
+        else dj.startIfIdle(track);
       } catch {
         showToast(t('room.uploadFailed', { name: file.name }));
       } finally {
@@ -124,8 +155,9 @@ export function Room({ code, uid, profile, onProfileChange }: { code: string; ui
         playback={state.playback}
         dj={djMember}
         isDj={isDj}
-        addedByName={currentTrack ? members.get(currentTrack.addedBy)?.name : undefined}
+        addedByName={currentTrack ? (members.get(currentTrack.addedBy)?.name ?? currentTrack.addedByName) : undefined}
         queueCount={state.queue.length}
+        pendingCount={isDj ? requests.length : 0}
         onPlay={dj.play}
         onPause={dj.pause}
         onNext={dj.next}
@@ -162,7 +194,15 @@ export function Room({ code, uid, profile, onProfileChange }: { code: string; ui
           members={members}
           isDj={isDj}
           uploads={uploads}
+          requests={requests}
+          uid={uid}
           onAddFiles={addFiles}
+          onApprove={(r) => void dj.approve(r).catch(() => showToast(t('home.error')))}
+          onDecline={(r) => void dj.decline(r)}
+          onCancel={(r) => {
+            cancelled.current.add(r.id);
+            void api.removeRequest(code, r);
+          }}
           onPlay={(tr) => dj.playTrack(tr)}
           onRemove={(tr) => void dj.removeTrack(tr)}
           onClose={() => setPanel(null)}

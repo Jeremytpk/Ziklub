@@ -2,8 +2,8 @@
   "rules": {
     "rooms": {
       "$code": {
-        ".read": "auth != null",
         "meta": {
+          ".read": "auth != null",
           ".write": "auth != null && !data.exists() && newData.child('createdBy').val() === auth.uid && newData.child('djUid').val() === auth.uid",
           ".validate": "newData.hasChildren(['createdAt', 'createdBy', 'djUid'])",
           "djUid": {
@@ -12,29 +12,47 @@
           }
         },
         "members": {
+          ".read": "auth != null",
           "$uid": {
             ".write": "auth != null && auth.uid === $uid && root.child('rooms/' + $code + '/meta').exists()",
             ".validate": "newData.hasChildren(['name', 'look', 'joinedAt']) && newData.child('name').isString() && newData.child('name').val().length > 0 && newData.child('name').val().length <= 20"
           }
         },
         "queue": {
+          ".read": "auth != null",
           "$trackId": {
             ".write": "auth != null && root.child('rooms/' + $code + '/meta/djUid').val() === auth.uid",
             ".validate": "newData.hasChildren(['title', 'duration', 'url', 'path', 'addedBy', 'addedAt']) && newData.child('title').isString() && newData.child('title').val().length <= 200 && newData.child('duration').isNumber()"
           }
         },
+        "requests": {
+          ".read": "auth != null && (root.child('rooms/' + $code + '/meta/djUid').val() === auth.uid || (query.orderByChild === 'addedBy' && query.equalTo === auth.uid))",
+          ".indexOn": [
+            "addedBy"
+          ],
+          "$id": {
+            ".read": "auth != null && (data.child('addedBy').val() === auth.uid || root.child('rooms/' + $code + '/meta/djUid').val() === auth.uid)",
+            ".write": "auth != null && ((!data.exists() && newData.child('addedBy').val() === auth.uid && root.child('rooms/' + $code + '/members/' + auth.uid).exists()) || (!newData.exists() && (data.child('addedBy').val() === auth.uid || root.child('rooms/' + $code + '/meta/djUid').val() === auth.uid)))",
+            ".validate": "newData.hasChildren(['title', 'duration', 'url', 'path', 'addedBy', 'addedByName', 'addedAt']) && newData.child('title').isString() && newData.child('title').val().length <= 200 && newData.child('duration').isNumber() && newData.child('addedByName').isString() && newData.child('addedByName').val().length <= 20"
+          }
+        },
         "playback": {
+          ".read": "auth != null",
           ".write": "auth != null && root.child('rooms/' + $code + '/meta/djUid').val() === auth.uid",
           ".validate": "newData.hasChildren(['playing', 'position', 'updatedAt']) && newData.child('playing').isBoolean() && newData.child('position').isNumber()"
         },
         "messages": {
+          ".read": "auth != null",
           "$id": {
             ".write": "auth != null && !data.exists() && newData.child('uid').val() === auth.uid && root.child('rooms/' + $code + '/members/' + auth.uid).exists()",
             ".validate": "newData.hasChildren(['uid', 'kind', 'ts']) && (newData.child('kind').val() === 'system' || (newData.child('kind').val() === 'user' && newData.child('text').isString() && newData.child('text').val().length > 0 && newData.child('text').val().length <= 500))"
           }
         },
         "reactions": {
-          ".indexOn": ["ts"],
+          ".read": "auth != null",
+          ".indexOn": [
+            "ts"
+          ],
           "$id": {
             ".write": "auth != null && !data.exists() && newData.child('uid').val() === auth.uid && root.child('rooms/' + $code + '/members/' + auth.uid).exists()",
             ".validate": "newData.hasChildren(['uid', 'mood', 'ts']) && newData.child('mood').isString() && newData.child('mood').val().length <= 20"

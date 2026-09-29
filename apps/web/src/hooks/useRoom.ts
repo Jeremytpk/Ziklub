@@ -6,6 +6,7 @@ import {
   previousTrack,
   type Message,
   type RoomState,
+  type SongRequest,
   type Track,
 } from '@ziklub/core';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -21,6 +22,8 @@ export function useRoom(code: string, uid: string, profile: Profile) {
   const [state, setState] = useState<RoomState>(EMPTY);
   const [ready, setReady] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
+  /** DJ: every pending suggestion. Others: their own pending suggestions. */
+  const [requests, setRequests] = useState<SongRequest[]>([]);
   const [soundBlocked, setSoundBlocked] = useState(false);
   const stateRef = useRef(state);
   stateRef.current = state;
@@ -28,6 +31,11 @@ export function useRoom(code: string, uid: string, profile: Profile) {
   const isDj = !!state.meta && state.meta.djUid === uid;
   const isDjRef = useRef(isDj);
   isDjRef.current = isDj;
+
+  useEffect(() => {
+    setRequests([]);
+    return isDj ? api.subscribeRequests(code, setRequests) : api.subscribeMyRequests(code, uid, setRequests);
+  }, [code, uid, isDj]);
 
   const currentTrack: Track | null = useMemo(
     () => state.queue.find((t) => t.id === state.playback?.trackId) ?? null,
@@ -189,6 +197,13 @@ export function useRoom(code: string, uid: string, profile: Profile) {
         if (stateRef.current.playback?.trackId === t.id) goNext();
         await api.removeTrack(code, t);
       },
+      async approve(r: SongRequest) {
+        const track = await api.approveRequest(code, uid, profileRef.current.name, r);
+        this.startIfIdle(track);
+      },
+      async decline(r: SongRequest) {
+        await api.removeRequest(code, r);
+      },
       /** Start playing a freshly uploaded song if nothing is playing yet. */
       startIfIdle(t: Track) {
         const pb = stateRef.current.playback;
@@ -196,7 +211,7 @@ export function useRoom(code: string, uid: string, profile: Profile) {
         if (!pb?.trackId || (!pb.playing && pb.position === 0)) setPlayback(t.id, true, 0);
       },
     }),
-    [code, goNext, setPlayback],
+    [code, uid, goNext, setPlayback],
   );
 
   const resumeSound = useCallback(() => {
@@ -204,5 +219,5 @@ export function useRoom(code: string, uid: string, profile: Profile) {
     sync.resume();
   }, [sync]);
 
-  return { state, ready, messages, isDj, currentTrack, dj, soundBlocked, resumeSound };
+  return { state, ready, messages, requests, isDj, currentTrack, dj, soundBlocked, resumeSound };
 }

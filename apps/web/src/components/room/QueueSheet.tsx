@@ -1,7 +1,7 @@
-import type { Member, Track } from '@ziklub/core';
+import type { Member, SongRequest, Track } from '@ziklub/core';
 import { useTranslation } from 'react-i18next';
 import { formatTime } from '../../lib/audio';
-import { IconPlus, IconTrash } from '../Icons';
+import { IconClose, IconPlus, IconTrash } from '../Icons';
 import { Sheet } from '../Sheet';
 
 export interface Upload {
@@ -15,32 +15,42 @@ interface Props {
   currentId: string | null;
   members: Map<string, Member>;
   isDj: boolean;
+  uid: string;
   uploads: Upload[];
+  /** DJ: every pending suggestion. Others: their own. */
+  requests: SongRequest[];
   onAddFiles: (files: FileList) => void;
   onPlay: (t: Track) => void;
   onRemove: (t: Track) => void;
+  onApprove: (r: SongRequest) => void;
+  onDecline: (r: SongRequest) => void;
+  onCancel: (r: SongRequest) => void;
   onClose: () => void;
 }
 
-export function QueueSheet({ queue, currentId, members, isDj, uploads, onAddFiles, onPlay, onRemove, onClose }: Props) {
+export function QueueSheet(p: Props) {
+  const { queue, currentId, members, isDj, uploads, requests } = p;
   const { t } = useTranslation();
+  const whoAdded = (tr: Track) => members.get(tr.addedBy)?.name ?? tr.addedByName ?? '…';
+
   return (
-    <Sheet title={t('room.queue')} onClose={onClose}>
-      {isDj && (
-        <label className="btn btn-primary add-songs">
-          <IconPlus /> {t('room.addSongs')}
+    <Sheet title={t('room.queue')} onClose={p.onClose}>
+      <div className="add-block">
+        <label className={`btn ${isDj ? 'btn-primary' : 'btn-soft'} add-songs`}>
+          <IconPlus /> {isDj ? t('room.addSongs') : t('room.suggestSongs')}
           <input
             type="file"
             accept="audio/*,.mp3,.m4a,.aac,.wav"
             multiple
             className="sr-only"
             onChange={(e) => {
-              if (e.target.files?.length) onAddFiles(e.target.files);
+              if (e.target.files?.length) p.onAddFiles(e.target.files);
               e.target.value = '';
             }}
           />
         </label>
-      )}
+        {!isDj && <p className="hint">{t('room.suggestHint')}</p>}
+      </div>
 
       {uploads.map((u) => (
         <div key={u.id} className="upload-row">
@@ -51,6 +61,40 @@ export function QueueSheet({ queue, currentId, members, isDj, uploads, onAddFile
         </div>
       ))}
 
+      {requests.length > 0 && (
+        <section className="requests" aria-label={isDj ? t('room.suggestions') : t('room.mySuggestions')}>
+          <h3>
+            {isDj ? t('room.suggestions') : t('room.mySuggestions')} <span className="count">{requests.length}</span>
+          </h3>
+          <ul className="queue-list">
+            {requests.map((r) => (
+              <li key={r.id} className="request">
+                <span className="queue-text">
+                  <b>{r.title}</b>
+                  <small>
+                    {formatTime(r.duration)} · {isDj ? t('room.suggestedBy', { name: r.addedByName }) : t('room.waitingDj')}
+                  </small>
+                </span>
+                {isDj ? (
+                  <span className="request-actions">
+                    <button type="button" className="btn btn-primary btn-small" onClick={() => p.onApprove(r)}>
+                      {t('room.approve')}
+                    </button>
+                    <button type="button" className="icon-btn" onClick={() => p.onDecline(r)} aria-label={`${t('room.decline')}: ${r.title}`}>
+                      <IconClose size={18} />
+                    </button>
+                  </span>
+                ) : (
+                  <button type="button" className="btn btn-ghost btn-small" onClick={() => p.onCancel(r)}>
+                    {t('room.cancel')}
+                  </button>
+                )}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
       {queue.length === 0 && uploads.length === 0 && <p className="empty">{isDj ? t('room.emptyQueueDj') : t('room.emptyQueue')}</p>}
 
       <ol className="queue-list">
@@ -58,17 +102,17 @@ export function QueueSheet({ queue, currentId, members, isDj, uploads, onAddFile
           const current = tr.id === currentId;
           return (
             <li key={tr.id} className={current ? 'current' : undefined}>
-              <button type="button" className="queue-item" disabled={!isDj} onClick={() => onPlay(tr)} aria-label={`${t('room.playThis')}: ${tr.title}`}>
+              <button type="button" className="queue-item" disabled={!isDj} onClick={() => p.onPlay(tr)} aria-label={`${t('room.playThis')}: ${tr.title}`}>
                 <span className="queue-num">{current ? '♪' : i + 1}</span>
                 <span className="queue-text">
                   <b>{tr.title}</b>
                   <small>
-                    {formatTime(tr.duration)} · {t('room.addedBy', { name: members.get(tr.addedBy)?.name ?? '…' })}
+                    {formatTime(tr.duration)} · {t('room.addedBy', { name: whoAdded(tr) })}
                   </small>
                 </span>
               </button>
               {isDj && (
-                <button type="button" className="icon-btn" onClick={() => onRemove(tr)} aria-label={`${t('room.remove')}: ${tr.title}`}>
+                <button type="button" className="icon-btn" onClick={() => p.onRemove(tr)} aria-label={`${t('room.remove')}: ${tr.title}`}>
                   <IconTrash size={18} />
                 </button>
               )}

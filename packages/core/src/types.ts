@@ -25,7 +25,14 @@ export interface Track {
   /** Storage path, used to delete the file. */
   path: string;
   addedBy: string;
+  /** Name of whoever suggested it, kept in case they leave the room. */
+  addedByName?: string;
   addedAt: number;
+}
+
+/** A song a member suggested. Only the DJ and the member can see it until the DJ approves it. */
+export interface SongRequest extends Track {
+  addedByName: string;
 }
 
 export interface Playback {
@@ -37,7 +44,7 @@ export interface Playback {
   updatedAt: number;
 }
 
-export type SystemEvent = 'aux' | 'claim' | 'join' | 'look';
+export type SystemEvent = 'aux' | 'claim' | 'join' | 'look' | 'approved';
 
 export type Message =
   | { id: string; kind: 'user'; uid: string; name: string; text: string; ts: number }

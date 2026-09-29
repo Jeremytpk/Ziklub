@@ -1,6 +1,7 @@
 import {
   type Database,
   child,
+  equalTo,
   get,
   limitToLast,
   onChildAdded,
@@ -19,7 +20,7 @@ import {
 } from 'firebase/database';
 import { type FirebaseStorage, deleteObject, getDownloadURL, ref as sref, uploadBytesResumable } from 'firebase/storage';
 import { generateRoomCode, sortQueue } from './room';
-import type { Member, Message, Playback, Reaction, RoomMeta, RoomState, SystemEvent, Track } from './types';
+import type { Member, Message, Playback, Reaction, RoomMeta, RoomState, SongRequest, SystemEvent, Track } from './types';
 
 export const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
 
@@ -161,12 +162,15 @@ export function createZiklubApi(db: Database, storage: FirebaseStorage) {
       }
     },
 
-    /** DJ only. Uploads an audio file and adds it to the queue. */
+    /**
+     * Uploads an audio file. The DJ's songs go straight into the queue; anyone else's become a
+     * suggestion (request) that only the DJ and they can see, until the DJ approves it.
+     */
     async addTrack(
       code: string,
       uid: string,
       file: Blob,
-      info: { title: string; duration: number; contentType: string },
+      info: { title: string; duration: number; contentType: string; addedByName: string; asRequest: boolean },
       onProgress?: (fraction: number) => void,
     ): Promise<Track> {
       if (file.size > MAX_UPLOAD_BYTES) throw new Error('too-big');
@@ -177,9 +181,61 @@ export function createZiklubApi(db: Database, storage: FirebaseStorage) {
         task.on('state_changed', (s) => onProgress?.(s.bytesTransferred / Math.max(1, s.totalBytes)), reject, () => resolve());
       });
       const url = await getDownloadURL(task.snapshot.ref);
-      const track = { title: info.title.slice(0, 200), duration: info.duration, url, path, addedBy: uid, addedAt: Date.now() };
-      await set(roomRef(code, `queue/${id}`), track);
+      const track = {
+        title: info.title.slice(0, 200),
+        duration: info.duration,
+        url,
+        path,
+        addedBy: uid,
+        addedByName: info.addedByName.slice(0, 20),
+        addedAt: Date.now(),
+      };
+      try {
+        await set(roomRef(code, `${info.asRequest ? 'requests' : 'queue'}/${id}`), track);
+      } catch (e) {
+        await deleteObject(sref(storage, path)).catch(() => undefined);
+        throw e;
+      }
       return { ...track, id };
+    },
+
+    /** DJ only: every pending suggestion in the room. */
+    subscribeRequests(code: string, cb: (r: SongRequest[]) => void): Unsubscribe {
+      return onValue(
+        roomRef(code, 'requests'),
+        (s) => cb(toList<SongRequest>(s.val())),
+        () => cb([]), // no longer DJ: access is refused
+      );
+    },
+
+    /** A member's own pending suggestions. */
+    subscribeMyRequests(code: string, uid: string, cb: (r: SongRequest[]) => void): Unsubscribe {
+      return onValue(
+        query(roomRef(code, 'requests'), orderByChild('addedBy'), equalTo(uid)),
+        (s) => cb(toList<SongRequest>(s.val())),
+        () => cb([]),
+      );
+    },
+
+    /** DJ only: moves a suggestion into the queue (in one atomic write) and tells the room. */
+    async approveRequest(code: string, djUid: string, djName: string, r: SongRequest): Promise<Track> {
+      const { id, ...data } = r;
+      const track = { ...data, addedAt: Date.now() };
+      await update(roomRef(code), { [`queue/${id}`]: track, [`requests/${id}`]: null });
+      await push(roomRef(code, 'messages'), {
+        kind: 'system',
+        uid: djUid,
+        event: 'approved',
+        params: { dj: djName, name: r.addedByName, title: r.title },
+        ts: serverTimestamp(),
+      });
+      return { ...track, id };
+    },
+
+    /** DJ (decline) or the member (cancel): removes a suggestion and its file. */
+    async removeRequest(code: string, r: SongRequest): Promise<void> {
+      await remove(roomRef(code, `requests/${r.id}`));
+      await deleteObject(sref(storage, r.path)).catch(() => undefined);
     },
 
     /** DJ only. */
@@ -188,6 +244,12 @@ export function createZiklubApi(db: Database, storage: FirebaseStorage) {
       await deleteObject(sref(storage, track.path)).catch(() => undefined);
     },
   };
+}
+
+function toList<T extends { id: string }>(v: Record<string, Omit<T, 'id'>> | null): T[] {
+  return Object.entries(v ?? {})
+    .map(([id, x]) => ({ ...x, id }) as T)
+    .sort((a, b) => (a as unknown as Track).addedAt - (b as unknown as Track).addedAt);
 }
 
 export type ZiklubApi = ReturnType<typeof createZiklubApi>;
