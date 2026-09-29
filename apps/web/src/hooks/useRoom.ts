@@ -12,6 +12,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { engine, isWebKitAudio } from '../lib/audio';
 import { api, serverNow } from '../lib/firebase';
+import { quiet } from '../lib/quiet';
 import type { Profile } from '../lib/profile';
 
 const LEAD_KEY = 'ziklub.seekLead';
@@ -47,14 +48,16 @@ export function useRoom(code: string, uid: string, profile: Profile) {
   profileRef.current = profile;
   useEffect(() => {
     const p = profileRef.current;
+    let alive = true;
     api
       .joinRoom(code, uid, { name: p.name, look: { ...p.look } })
       .then(() => {
+        if (!alive) return; // left (or remounted) before the join finished
         // Only announce the first arrival in this browser tab, not every refresh.
         const key = `ziklub.joined.${code}`;
         if (!sessionStorage.getItem(key)) {
           sessionStorage.setItem(key, '1');
-          void api.sendSystem(code, uid, 'join', { name: p.name });
+          quiet(api.sendSystem(code, uid, 'join', { name: p.name }));
         }
       })
       .catch(() => undefined);
@@ -64,6 +67,7 @@ export function useRoom(code: string, uid: string, profile: Profile) {
     });
     const offMsgs = api.subscribeMessages(code, setMessages);
     return () => {
+      alive = false;
       offRoom();
       offMsgs();
       engine.stop();
@@ -110,7 +114,7 @@ export function useRoom(code: string, uid: string, profile: Profile) {
   const setPlayback = useCallback(
     (trackId: string | null, playing: boolean, position: number) => {
       if (!isDjRef.current) return;
-      void api.setPlayback(code, { trackId, playing, position: Math.max(0, position) });
+      quiet(api.setPlayback(code, { trackId, playing, position: Math.max(0, position) }));
     },
     [code],
   );
@@ -161,7 +165,7 @@ export function useRoom(code: string, uid: string, profile: Profile) {
     const dj = state.meta?.djUid;
     if (!state.meta || auxSuccessor(dj, state.members) !== uid) return;
     api.claimAux(code, uid, dj).then((ok) => {
-      if (ok) void api.sendSystem(code, uid, 'claim', { name: profileRef.current.name });
+      if (ok) quiet(api.sendSystem(code, uid, 'claim', { name: profileRef.current.name }));
     });
   }, [state.meta, state.members, code, uid]);
 
@@ -196,6 +200,9 @@ export function useRoom(code: string, uid: string, profile: Profile) {
       async removeTrack(t: Track) {
         if (stateRef.current.playback?.trackId === t.id) goNext();
         await api.removeTrack(code, t);
+      },
+      move(t: Track, dir: -1 | 1) {
+        quiet(api.moveTrack(code, stateRef.current.queue, t.id, dir));
       },
       async approve(r: SongRequest) {
         const track = await api.approveRequest(code, uid, profileRef.current.name, r);

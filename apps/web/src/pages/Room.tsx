@@ -1,4 +1,4 @@
-import { MAX_UPLOAD_BYTES, type Member, type SongRequest } from '@ziklub/core';
+import { isEffect, MAX_UPLOAD_BYTES, type Effect, type Member, type SongRequest } from '@ziklub/core';
 import type { Mood } from '@ziklub/zu';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -6,6 +6,7 @@ import { useNavigate } from 'react-router';
 import { IconBack, IconShare, IconSound } from '../components/Icons';
 import { ProfileEditor } from '../components/ProfileEditor';
 import { ChatList, MessageForm } from '../components/room/Chat';
+import { EffectFlash, FxSheet, type FlashHandle } from '../components/room/Effects';
 import { MembersSheet } from '../components/room/MembersSheet';
 import { Player } from '../components/room/Player';
 import { QueueSheet, type Upload } from '../components/room/QueueSheet';
@@ -15,9 +16,11 @@ import { ZuAvatar } from '../components/ZuAvatar';
 import { useRoom } from '../hooks/useRoom';
 import { audioType, readDuration, titleFromFile } from '../lib/audio';
 import { api, serverNow } from '../lib/firebase';
+import { playFx } from '../lib/fx';
+import { quiet } from '../lib/quiet';
 import type { Profile } from '../lib/profile';
 
-type Panel = 'queue' | 'members' | 'look' | null;
+type Panel = 'queue' | 'members' | 'look' | 'fx' | null;
 
 export function Room({ code, uid, profile, onProfileChange }: { code: string; uid: string; profile: Profile; onProfileChange: (p: Profile) => void }) {
   const { t } = useTranslation();
@@ -27,6 +30,7 @@ export function Room({ code, uid, profile, onProfileChange }: { code: string; ui
   const [uploads, setUploads] = useState<Upload[]>([]);
   const [toast, setToast] = useState<string | null>(null);
   const floats = useRef<FloatsHandle>(null);
+  const flash = useRef<FlashHandle>(null);
 
   const members = useMemo(() => new Map<string, Member>(state.members.map((m) => [m.uid, m])), [state.members]);
   const djMember = state.meta ? members.get(state.meta.djUid) : undefined;
@@ -68,8 +72,26 @@ export function Room({ code, uid, profile, onProfileChange }: { code: string; ui
   // Reactions from everyone (including me) float over the chat.
   useEffect(() => api.subscribeReactions(code, serverNow(), (r) => floats.current?.add(r.mood)), [code]);
 
-  const react = (m: Mood) => void api.sendReaction(code, uid, m);
-  const send = (text: string) => void api.sendMessage(code, uid, profile.name, text);
+  // DJ effects: everyone hears and sees them. The DJ plays their own instantly, not via the database.
+  const nameOf = useRef((id: string) => members.get(id)?.name ?? '');
+  nameOf.current = (id: string) => members.get(id)?.name ?? '';
+  useEffect(
+    () =>
+      api.subscribeEffects(code, serverNow(), (e) => {
+        if (e.uid === uid || !isEffect(e.fx)) return;
+        playFx(e.fx);
+        flash.current?.show(e.fx, nameOf.current(e.uid));
+      }),
+    [code, uid],
+  );
+  const fireFx = (fx: Effect) => {
+    playFx(fx);
+    flash.current?.show(fx, profile.name);
+    quiet(api.sendEffect(code, uid, fx));
+  };
+
+  const react = (m: Mood) => quiet(api.sendReaction(code, uid, m));
+  const send = (text: string) => quiet(api.sendMessage(code, uid, profile.name, text));
 
   const share = async () => {
     const url = `${window.location.origin}/r/${code}`;
@@ -121,16 +143,24 @@ export function Room({ code, uid, profile, onProfileChange }: { code: string; ui
   };
 
   const passAux = async (m: Member) => {
-    await api.passAux(code, m.uid);
-    await api.sendSystem(code, uid, 'aux', { from: profile.name, to: m.name });
     setPanel(null);
+    try {
+      await api.passAux(code, m.uid);
+      quiet(api.sendSystem(code, uid, 'aux', { from: profile.name, to: m.name }));
+    } catch {
+      showToast(t('home.error'));
+    }
   };
 
   const saveLook = async (p: Profile) => {
     onProfileChange(p);
     setPanel(null);
-    await api.updateProfile(code, uid, { name: p.name, look: { ...p.look } });
-    await api.sendSystem(code, uid, 'look', { name: p.name });
+    try {
+      await api.updateProfile(code, uid, { name: p.name, look: { ...p.look } });
+      quiet(api.sendSystem(code, uid, 'look', { name: p.name }));
+    } catch {
+      showToast(t('home.error'));
+    }
   };
 
   return (
@@ -164,6 +194,7 @@ export function Room({ code, uid, profile, onProfileChange }: { code: string; ui
         onPrevious={dj.previous}
         onSeek={dj.seek}
         onOpenQueue={() => setPanel('queue')}
+        onOpenFx={() => setPanel('fx')}
       />
 
       <div className="chat-area">
@@ -180,6 +211,8 @@ export function Room({ code, uid, profile, onProfileChange }: { code: string; ui
         <ReactionBar onReact={react} />
         <MessageForm onSend={send} />
       </footer>
+
+      <EffectFlash ref={flash} />
 
       {toast && (
         <div className="toast" role="status">
@@ -198,16 +231,18 @@ export function Room({ code, uid, profile, onProfileChange }: { code: string; ui
           uid={uid}
           onAddFiles={addFiles}
           onApprove={(r) => void dj.approve(r).catch(() => showToast(t('home.error')))}
-          onDecline={(r) => void dj.decline(r)}
+          onDecline={(r) => quiet(dj.decline(r))}
           onCancel={(r) => {
             cancelled.current.add(r.id);
-            void api.removeRequest(code, r);
+            quiet(api.removeRequest(code, r));
           }}
           onPlay={(tr) => dj.playTrack(tr)}
-          onRemove={(tr) => void dj.removeTrack(tr)}
+          onRemove={(tr) => quiet(dj.removeTrack(tr))}
+          onMove={(tr, dir) => dj.move(tr, dir)}
           onClose={() => setPanel(null)}
         />
       )}
+      {panel === 'fx' && isDj && <FxSheet onFire={fireFx} onClose={() => setPanel(null)} />}
       {panel === 'members' && (
         <MembersSheet
           members={state.members}

@@ -22,7 +22,10 @@
           ".read": "auth != null",
           "$trackId": {
             ".write": "auth != null && root.child('rooms/' + $code + '/meta/djUid').val() === auth.uid",
-            ".validate": "newData.hasChildren(['title', 'duration', 'url', 'path', 'addedBy', 'addedAt']) && newData.child('title').isString() && newData.child('title').val().length <= 200 && newData.child('duration').isNumber()"
+            ".validate": "newData.hasChildren(['title', 'duration', 'url', 'path', 'addedBy', 'addedAt']) && newData.child('title').isString() && newData.child('title').val().length <= 200 && newData.child('duration').isNumber()",
+            "order": {
+              ".validate": "newData.isNumber()"
+            }
           }
         },
         "requests": {
@@ -56,6 +59,16 @@
           "$id": {
             ".write": "auth != null && !data.exists() && newData.child('uid').val() === auth.uid && root.child('rooms/' + $code + '/members/' + auth.uid).exists()",
             ".validate": "newData.hasChildren(['uid', 'mood', 'ts']) && newData.child('mood').isString() && newData.child('mood').val().length <= 20"
+          }
+        },
+        "effects": {
+          ".read": "auth != null",
+          ".indexOn": [
+            "ts"
+          ],
+          "$id": {
+            ".write": "auth != null && !data.exists() && newData.child('uid').val() === auth.uid && root.child('rooms/' + $code + '/meta/djUid').val() === auth.uid",
+            ".validate": "newData.hasChildren(['uid', 'fx', 'ts']) && newData.child('fx').isString() && newData.child('fx').val().length <= 20"
           }
         }
       }

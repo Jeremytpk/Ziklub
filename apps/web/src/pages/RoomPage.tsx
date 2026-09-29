@@ -7,6 +7,7 @@ import { LogoMark } from '../components/Logo';
 import { ProfileEditor } from '../components/ProfileEditor';
 import { ZuAvatar } from '../components/ZuAvatar';
 import { engine } from '../lib/audio';
+import { unlockFx } from '../lib/fx';
 import { api, useAuthUser } from '../lib/firebase';
 import { loadProfile, newProfile, saveProfile, type Profile } from '../lib/profile';
 import { Room } from './Room';
@@ -41,6 +42,7 @@ export function RoomPage() {
   const enter = (p: Profile) => {
     // This runs inside the tap, which is what lets phones play sound later.
     void engine.unlock();
+    unlockFx();
     saveProfile(p);
     setSaved(p);
     setStep('room');

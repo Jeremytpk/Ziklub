@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { auxSuccessor, expectedPosition, generateRoomCode, isValidRoomCode, nextTrack, normalizeRoomCode, previousTrack } from './room';
+import { EFFECTS, renderEffect } from './effects';
+import { auxSuccessor, moveInQueue, sortQueue, expectedPosition, generateRoomCode, isValidRoomCode, nextTrack, normalizeRoomCode, previousTrack } from './room';
 import { PlaybackSync, type AudioEngine } from './sync';
 import type { Track } from './types';
 
@@ -131,5 +132,33 @@ describe('PlaybackSync', () => {
     e.time += 3; // e.g. the phone was busy
     run(4);
     expect(Math.abs(e.time - (clock.now - 100_000) / 1000)).toBeLessThan(0.1);
+  });
+});
+
+describe('queue reordering', () => {
+  const q = sortQueue([track('a', 1), track('b', 2), track('c', 3)]);
+  const apply = (orders: Record<string, number> | null) => sortQueue(q.map((t) => (orders && t.id in orders ? { ...t, order: orders[t.id] } : t))).map((t) => t.id);
+  it('moves a song up or down one place', () => {
+    expect(apply(moveInQueue(q, 'c', -1))).toEqual(['a', 'c', 'b']);
+    expect(apply(moveInQueue(q, 'a', 1))).toEqual(['b', 'a', 'c']);
+  });
+  it('does nothing at the ends', () => {
+    expect(moveInQueue(q, 'a', -1)).toBeNull();
+    expect(moveInQueue(q, 'c', 1)).toBeNull();
+  });
+});
+
+describe('DJ effects', () => {
+  it.each(EFFECTS)('%s renders clean audio', (fx) => {
+    const s = renderEffect(fx, 22050);
+    expect(s.length).toBeGreaterThan(22050 * 0.4);
+    expect(s.length).toBeLessThan(22050 * 3);
+    let peak = 0;
+    for (const x of s) {
+      expect(Number.isFinite(x)).toBe(true);
+      peak = Math.max(peak, Math.abs(x));
+    }
+    expect(peak).toBeGreaterThan(0.3); // audible
+    expect(peak).toBeLessThanOrEqual(1); // no clipping
   });
 });

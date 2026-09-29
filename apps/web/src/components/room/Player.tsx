@@ -3,7 +3,7 @@ import { useEffect, useState, type MouseEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { formatTime } from '../../lib/audio';
 import { serverNow } from '../../lib/firebase';
-import { IconNext, IconPause, IconPlay, IconPrev, IconQueue } from '../Icons';
+import { IconFx, IconNext, IconPause, IconPlay, IconPrev, IconQueue } from '../Icons';
 import { MoodBlob } from '../MoodBlob';
 import { ZuAvatar } from '../ZuAvatar';
 
@@ -22,9 +22,10 @@ interface Props {
   onPrevious: () => void;
   onSeek: (s: number) => void;
   onOpenQueue: () => void;
+  onOpenFx: () => void;
 }
 
-export function Player({ track, playback, dj, isDj, addedByName, queueCount, pendingCount, onPlay, onPause, onNext, onPrevious, onSeek, onOpenQueue }: Props) {
+export function Player({ track, playback, dj, isDj, addedByName, queueCount, pendingCount, onPlay, onPause, onNext, onPrevious, onSeek, onOpenQueue, onOpenFx }: Props) {
   const { t } = useTranslation();
   const [pos, setPos] = useState(0);
   const playing = !!playback?.playing && !!track;
@@ -79,6 +80,11 @@ export function Player({ track, playback, dj, isDj, addedByName, queueCount, pen
           <span>{isDj ? t('room.youAreDj') : dj ? t('room.isDj', { name: dj.name }) : ''}</span>
         </span>
         <div className="control-btns">
+          {isDj && (
+            <button type="button" className="icon-btn fx-btn" onClick={onOpenFx} aria-label={t('room.fx')}>
+              <IconFx />
+            </button>
+          )}
           <button type="button" className="icon-btn" onClick={onPrevious} disabled={!isDj} title={djTitle} aria-label={t('room.previous')}>
             <IconPrev />
           </button>

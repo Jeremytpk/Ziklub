@@ -1,5 +1,7 @@
 import type { Member } from '@ziklub/core';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { isFxMuted, setFxMuted } from '../../lib/fx';
 import { Sheet } from '../Sheet';
 import { ZuAvatar } from '../ZuAvatar';
 
@@ -15,6 +17,7 @@ interface Props {
 
 export function MembersSheet({ members, djUid, uid, isDj, onPassAux, onEditLook, onClose }: Props) {
   const { t } = useTranslation();
+  const [hearFx, setHearFx] = useState(() => !isFxMuted());
   const sorted = [...members].sort((a, b) => (a.uid === djUid ? -1 : b.uid === djUid ? 1 : a.joinedAt - b.joinedAt));
   return (
     <Sheet title={t('room.members')} onClose={onClose}>
@@ -34,6 +37,19 @@ export function MembersSheet({ members, djUid, uid, isDj, onPassAux, onEditLook,
           </li>
         ))}
       </ul>
+      <label className="toggle-row">
+        <span>{t('room.hearEffects')}</span>
+        <input
+          id="hear-effects"
+          type="checkbox"
+          className="switch"
+          checked={hearFx}
+          onChange={(e) => {
+            setHearFx(e.target.checked);
+            setFxMuted(!e.target.checked);
+          }}
+        />
+      </label>
       <button type="button" className="btn btn-ghost" onClick={onEditLook}>
         {t('room.editLook')}
       </button>

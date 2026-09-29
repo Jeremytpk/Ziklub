@@ -250,6 +250,45 @@ button:focus-visible, a:focus-visible, label:has(input.sr-only:focus-visible) { 
 .member-name { flex: 1; font-weight: 700; min-width: 0; overflow-wrap: anywhere; }
 .member-name small { color: var(--muted); font-weight: 500; }
 
+/* ---------- queue reordering ---------- */
+.row-actions { display: flex; align-items: center; gap: 6px; flex: none; }
+.move-btns { display: grid; gap: 2px; }
+.move-btn { appearance: none; border: 0; cursor: pointer; width: 34px; height: 21px; border-radius: 8px; background: var(--surface-2); color: var(--fg); display: grid; place-items: center; padding: 0; }
+.move-btn:disabled { opacity: .3; cursor: default; }
+.move-btn:active:not(:disabled) { background: var(--accent); color: var(--on-accent); }
+
+/* ---------- DJ effects ---------- */
+.fx-btn { background: linear-gradient(135deg, var(--coral), var(--pink)); color: var(--ink); }
+.fx-pads { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.fx-pad {
+  appearance: none; border: 0; cursor: pointer; aspect-ratio: 1; max-width: 100%;
+  background: var(--c); color: var(--ink); font-family: var(--f-display); font-weight: 800; font-size: 14px; line-height: 1.1;
+  border-radius: 44% 56% 50% 50% / 52% 46% 54% 48%; padding: 6px; display: grid; place-items: center; text-align: center;
+  box-shadow: inset -4px -6px 0 rgba(42, 34, 51, .14); transition: transform .08s;
+}
+.fx-drop { color: var(--cream); }
+.fx-pad:active { transform: scale(.9); border-radius: 56% 44% 46% 54% / 46% 54% 48% 52%; }
+.fx-flash { position: fixed; inset: 0; z-index: 25; pointer-events: none; display: grid; place-items: center; overflow: hidden; }
+.fx-burst {
+  position: absolute; width: 140vmax; height: 140vmax; border-radius: 50%;
+  background: radial-gradient(circle, var(--c) 0%, transparent 60%); opacity: .55; animation: fx-burst 1.2s ease-out forwards;
+}
+.fx-word {
+  position: relative; font-family: var(--f-display); font-weight: 800; font-size: clamp(44px, 14vw, 88px); line-height: 1;
+  color: var(--c); text-transform: uppercase; text-align: center; letter-spacing: -.02em;
+  text-shadow: 0 4px 0 rgba(42, 34, 51, .35), 0 0 30px rgba(0, 0, 0, .25); animation: fx-word 1.3s cubic-bezier(.2, .9, .3, 1.2) forwards;
+}
+.fx-word small { display: block; font-size: 16px; letter-spacing: .04em; color: var(--fg); text-shadow: none; margin-top: 6px; text-transform: none; }
+@keyframes fx-burst { from { transform: scale(.1); opacity: .8; } to { transform: scale(1); opacity: 0; } }
+@keyframes fx-word { 0% { transform: scale(.3) rotate(-8deg); opacity: 0; } 20% { transform: scale(1.12) rotate(3deg); opacity: 1; } 35% { transform: scale(1) rotate(0); } 80% { opacity: 1; } 100% { transform: scale(1.05); opacity: 0; } }
+
+/* ---------- toggle ---------- */
+.toggle-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; background: var(--surface); border: 1px solid var(--line); border-radius: 22px; padding: 12px 16px; font-weight: 600; cursor: pointer; }
+.switch { appearance: none; width: 48px; height: 28px; border-radius: 999px; background: var(--surface-2); position: relative; cursor: pointer; flex: none; transition: background .2s; margin: 0; }
+.switch::after { content: ""; position: absolute; top: 3px; left: 3px; width: 22px; height: 22px; border-radius: 50%; background: var(--fg); transition: transform .2s; }
+.switch:checked { background: var(--accent); }
+.switch:checked::after { transform: translateX(20px); background: var(--on-accent); }
+
 /* ---------- mood blobs (reactions) ---------- */
 .mood-blob {
   --s: 48px; width: var(--s); height: var(--s); background: var(--c); display: inline-grid; place-items: center; position: relative; flex: none;
@@ -309,4 +348,5 @@ button:focus-visible, a:focus-visible, label:has(input.sr-only:focus-visible) { 
 @media (prefers-reduced-motion: reduce) {
   .mood-blob, .mood-blob .mood-face, .mood-blob g, .preview-zu.pop { animation: none !important; }
   .float { animation-duration: 1.2s; }
+  .fx-burst, .fx-word { animation-duration: .01s; }
 }

@@ -19,8 +19,8 @@ import {
   update,
 } from 'firebase/database';
 import { type FirebaseStorage, deleteObject, getDownloadURL, ref as sref, uploadBytesResumable } from 'firebase/storage';
-import { generateRoomCode, sortQueue } from './room';
-import type { Member, Message, Playback, Reaction, RoomMeta, RoomState, SongRequest, SystemEvent, Track } from './types';
+import { generateRoomCode, moveInQueue, sortQueue } from './room';
+import type { EffectEvent, Member, Message, Playback, Reaction, RoomMeta, RoomState, SongRequest, SystemEvent, Track } from './types';
 
 export const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
 
@@ -138,6 +138,17 @@ export function createZiklubApi(db: Database, storage: FirebaseStorage) {
       return onChildAdded(q, (s) => cb({ ...s.val(), id: s.key! }));
     },
 
+    /** DJ only: plays a sound effect for everyone. */
+    async sendEffect(code: string, uid: string, fx: string): Promise<void> {
+      await push(roomRef(code, 'effects'), { uid, fx, ts: serverTimestamp() });
+    },
+
+    /** Effects sent after `sinceServerMs`, one callback per effect. */
+    subscribeEffects(code: string, sinceServerMs: number, cb: (e: EffectEvent) => void): Unsubscribe {
+      const q = query(roomRef(code, 'effects'), orderByChild('ts'), startAt(sinceServerMs));
+      return onChildAdded(q, (s) => cb({ ...s.val(), id: s.key! }));
+    },
+
     /** DJ only. Writes the shared playback state. */
     async setPlayback(code: string, p: Omit<Playback, 'updatedAt'>): Promise<void> {
       await set(roomRef(code, 'playback'), { ...p, updatedAt: serverTimestamp() });
@@ -236,6 +247,13 @@ export function createZiklubApi(db: Database, storage: FirebaseStorage) {
     async removeRequest(code: string, r: SongRequest): Promise<void> {
       await remove(roomRef(code, `requests/${r.id}`));
       await deleteObject(sref(storage, r.path)).catch(() => undefined);
+    },
+
+    /** DJ only: moves a song one place up (-1) or down (+1) in the queue. */
+    async moveTrack(code: string, queue: Track[], id: string, dir: -1 | 1): Promise<void> {
+      const orders = moveInQueue(queue, id, dir);
+      if (!orders) return;
+      await update(roomRef(code, 'queue'), Object.fromEntries(Object.entries(orders).map(([tid, o]) => [`${tid}/order`, o])));
     },
 
     /** DJ only. */

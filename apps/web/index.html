@@ -13,6 +13,16 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sniglet:wght@400;800&family=Figtree:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" />
     <title>Ziklub</title>
+    <!-- Netlify injects a "Powered by Netlify" badge on every page. Use its own dismissal setting so it never renders,
+         and hide its frame in case storage is unavailable (private browsing). -->
+    <script>
+      try {
+        localStorage.setItem('nl-hud:public:v1', 'hidden');
+      } catch (e) {}
+    </script>
+    <style>
+      #nl-badge-frame, #nl-hud-frame { display: none !important; }
+    </style>
   </head>
   <body>
     <div id="root"></div>

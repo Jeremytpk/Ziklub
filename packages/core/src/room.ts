@@ -24,8 +24,30 @@ export function expectedPosition(p: Playback, serverNow: number): number {
   return p.position + Math.max(0, (serverNow - p.updatedAt) / 1000);
 }
 
+export const queueOrder = (t: Track) => t.order ?? t.addedAt;
+
 export function sortQueue(tracks: Track[]): Track[] {
-  return [...tracks].sort((a, b) => a.addedAt - b.addedAt || a.id.localeCompare(b.id));
+  return [...tracks].sort((a, b) => queueOrder(a) - queueOrder(b) || a.id.localeCompare(b.id));
+}
+
+/**
+ * New `order` values to move a track one place up (-1) or down (+1): it swaps places with its neighbour.
+ * Returns null when it is already at that end.
+ */
+export function moveInQueue(queue: Track[], id: string, dir: -1 | 1): Record<string, number> | null {
+  const i = queue.findIndex((t) => t.id === id);
+  const j = i + dir;
+  if (i === -1 || j < 0 || j >= queue.length) return null;
+  const a = queue[i];
+  const b = queue[j];
+  let oa = queueOrder(b);
+  let ob = queueOrder(a);
+  if (oa === ob) {
+    // Same position value (rare): nudge so the swap is visible.
+    oa += dir * 0.5;
+    ob -= dir * 0.5;
+  }
+  return { [a.id]: oa, [b.id]: ob };
 }
 
 export function nextTrack(queue: Track[], currentId: string | null): Track | null {

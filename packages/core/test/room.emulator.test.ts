@@ -183,6 +183,27 @@ describe('a room with two friends', () => {
     });
   });
 
+  it('only the DJ can reorder the queue and play effects', async () => {
+    const song = new Blob([new Uint8Array(512)], { type: 'audio/mpeg' });
+    await A.api.addTrack(code, A.uid, song, { title: 'Deux', duration: 60, contentType: 'audio/mpeg', addedByName: 'Maya', asRequest: false });
+    const before = await nextState(A, code, (x) => x.queue.length >= 2);
+    const last = before.queue[before.queue.length - 1];
+    await expect(B.api.moveTrack(code, before.queue, last.id, -1)).rejects.toThrow();
+    await A.api.moveTrack(code, before.queue, last.id, -1);
+    const after = await nextState(B, code, (x) => x.queue[x.queue.length - 2]?.id === last.id);
+    expect(after.queue[after.queue.length - 2].id).toBe(last.id);
+
+    await A.api.sendEffect(code, A.uid, 'airhorn');
+    await expect(B.api.sendEffect(code, B.uid, 'airhorn')).rejects.toThrow();
+    const got = await new Promise<string>((resolve) => {
+      const off = B.api.subscribeEffects(code, 0, (e) => {
+        setTimeout(off, 0);
+        resolve(e.fx);
+      });
+    });
+    expect(got).toBe('airhorn');
+  });
+
   it('when the DJ leaves, the remaining member can claim the aux', async () => {
     await A.api.leaveRoom(code, A.uid);
     const ok = await B.api.claimAux(code, B.uid, A.uid);

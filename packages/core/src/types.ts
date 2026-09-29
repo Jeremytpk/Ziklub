@@ -28,6 +28,8 @@ export interface Track {
   /** Name of whoever suggested it, kept in case they leave the room. */
   addedByName?: string;
   addedAt: number;
+  /** Position in the queue (the DJ can reorder). Falls back to addedAt. */
+  order?: number;
 }
 
 /** A song a member suggested. Only the DJ and the member can see it until the DJ approves it. */
@@ -54,6 +56,14 @@ export interface Reaction {
   id: string;
   uid: string;
   mood: string;
+  ts: number;
+}
+
+/** A DJ sound effect, played on everyone's phone. */
+export interface EffectEvent {
+  id: string;
+  uid: string;
+  fx: string;
   ts: number;
 }
 

@@ -1,7 +1,7 @@
 import type { Member, SongRequest, Track } from '@ziklub/core';
 import { useTranslation } from 'react-i18next';
 import { formatTime } from '../../lib/audio';
-import { IconClose, IconPlus, IconTrash } from '../Icons';
+import { IconClose, IconDown, IconPlus, IconTrash, IconUp } from '../Icons';
 import { Sheet } from '../Sheet';
 
 export interface Upload {
@@ -22,6 +22,7 @@ interface Props {
   onAddFiles: (files: FileList) => void;
   onPlay: (t: Track) => void;
   onRemove: (t: Track) => void;
+  onMove: (t: Track, dir: -1 | 1) => void;
   onApprove: (r: SongRequest) => void;
   onDecline: (r: SongRequest) => void;
   onCancel: (r: SongRequest) => void;
@@ -112,9 +113,25 @@ export function QueueSheet(p: Props) {
                 </span>
               </button>
               {isDj && (
-                <button type="button" className="icon-btn" onClick={() => p.onRemove(tr)} aria-label={`${t('room.remove')}: ${tr.title}`}>
-                  <IconTrash size={18} />
-                </button>
+                <span className="row-actions">
+                  <span className="move-btns">
+                    <button type="button" className="move-btn" disabled={i === 0} onClick={() => p.onMove(tr, -1)} aria-label={`${t('room.moveUp')}: ${tr.title}`}>
+                      <IconUp size={16} />
+                    </button>
+                    <button
+                      type="button"
+                      className="move-btn"
+                      disabled={i === queue.length - 1}
+                      onClick={() => p.onMove(tr, 1)}
+                      aria-label={`${t('room.moveDown')}: ${tr.title}`}
+                    >
+                      <IconDown size={16} />
+                    </button>
+                  </span>
+                  <button type="button" className="icon-btn" onClick={() => p.onRemove(tr)} aria-label={`${t('room.remove')}: ${tr.title}`}>
+                    <IconTrash size={18} />
+                  </button>
+                </span>
               )}
             </li>
           );
